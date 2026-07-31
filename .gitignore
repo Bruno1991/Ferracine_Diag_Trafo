@@ -1,0 +1,16 @@
+<<<<<<< HEAD
+.env
+*.pdf
+pdf_scan_summary.json
+write_report.py
+=======
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+.env.example
+!.env.example
+>>>>>>> ab15fba (feat: atualizacao completa do app ferracine_diag_trafo)

@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer utilities {
+  .tech-border {
+    border: 1px solid #cbd5e1;
+  }
+  .label-xs {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .grid-dot {
+    background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
+
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Global Dark Theme Adaptation */
+html.dark body, body.dark {
+  background-color: #090d16;
+  color: #f8fafc;
+}
+
+.dark .label-xs {
+  color: #94a3b8 !important;
+}
+
+.dark .tech-border {
+  border-color: #334155 !important;
+}
+
+/* Sleek inputs in dark mode */
+.dark input[type="text"],
+.dark input[type="number"],
+.dark select,
+.dark textarea {
+  color-scheme: dark;
+}
+
+.dark select option {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+
+
