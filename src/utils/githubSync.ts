@@ -1,4 +1,5 @@
 import { TransformerSpec } from '../types';
+import { fetchLocalDatabaseFolderFiles } from './sqliteAndSplitLoader';
 
 export interface GitHubSyncConfig {
   token: string;
@@ -93,9 +94,14 @@ export async function fetchRemoteTransformers(
 
   if (!res.ok) {
     if (res.status === 404) {
-      return { sha: null, transformers: [] };
+      const localFallback = await fetchLocalDatabaseFolderFiles();
+      return { sha: null, transformers: localFallback };
     }
     const errorJson = await res.json().catch(() => ({}));
+    const localFallback = await fetchLocalDatabaseFolderFiles();
+    if (localFallback.length > 0) {
+      return { sha: null, transformers: localFallback };
+    }
     throw new Error(errorJson.message || `Erro no GitHub (Status ${res.status})`);
   }
 
@@ -116,6 +122,13 @@ export async function fetchRemoteTransformers(
       }
     } catch (e) {
       console.warn('Erro ao decodificar JSON remoto do GitHub:', e);
+    }
+  }
+
+  if (remoteTransformers.length === 0) {
+    const localTrafos = await fetchLocalDatabaseFolderFiles();
+    if (localTrafos.length > 0) {
+      remoteTransformers = localTrafos;
     }
   }
 

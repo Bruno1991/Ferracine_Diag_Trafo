@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Database, Search, Filter, Shield, Zap, Trash2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Database, Search, Filter, Shield, Zap, Trash2, Upload, FileCode, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { TransformerSpec, TransformerType, PhaseType } from '../types';
+import { processSplitFiles } from '../utils/sqliteAndSplitLoader';
 
 interface DatabaseExplorerProps {
   transformers: TransformerSpec[];
@@ -16,6 +17,56 @@ export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({
   const [testDateFilter, setTestDateFilter] = useState('');
   const [phaseType, setPhaseType] = useState<PhaseType | 'ALL'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSplitFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsProcessingFiles(true);
+    setUploadStatus(null);
+
+    try {
+      const fileList = Array.from(files);
+      const parsedTrafos = await processSplitFiles(fileList);
+
+      if (parsedTrafos.length === 0) {
+        setUploadStatus({
+          type: 'error',
+          message: 'Nenhum registro de transformador foi identificado nos arquivos fornecidos.'
+        });
+      } else {
+        // Merge with existing transformers removing duplicates
+        const map = new Map<string, TransformerSpec>();
+        transformers.forEach((t) => map.set(t.id, t));
+        parsedTrafos.forEach((t) => map.set(t.id, t));
+
+        const merged = Array.from(map.values());
+        try {
+          localStorage.setItem('tx_analytix_transformers', JSON.stringify(merged));
+        } catch (e) {
+          console.error('Failed to save merged transformers to localStorage', e);
+        }
+
+        onUpdateTransformers(merged);
+        setUploadStatus({
+          type: 'success',
+          message: `Sucesso! ${parsedTrafos.length} equipamentos carregados e unificados do banco de dados.`
+        });
+      }
+    } catch (err: any) {
+      console.error('Erro ao processar partes do banco:', err);
+      setUploadStatus({
+        type: 'error',
+        message: `Erro ao processar arquivos divididos: ${err.message || 'Formato inválido'}`
+      });
+    } finally {
+      setIsProcessingFiles(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const filtered = transformers.filter((t) => {
     if (phaseType !== 'ALL' && t.phaseType !== phaseType) return false;
@@ -62,11 +113,55 @@ export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="file"
+            ref={fileInputRef}
+            multiple
+            accept=".json,.sqlite,.db,.part1,.part2,.001,.002"
+            onChange={handleSplitFileUpload}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessingFiles}
+            title="Importar banco de dados divididos em várias partes (.part1, .part2, .sqlite ou .json)"
+            className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-bold font-mono bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {isProcessingFiles ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                Unindo Partes...
+              </>
+            ) : (
+              <>
+                <Upload className="w-3.5 h-3.5" />
+                Importar Banco Dividido
+              </>
+            )}
+          </button>
+
           <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold font-mono bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 shadow-xs">
             {filtered.length} EQUIPAMENTOS
           </span>
         </div>
       </div>
+
+      {uploadStatus && (
+        <div
+          className={`p-2.5 rounded border text-xs font-mono flex items-center gap-2 ${
+            uploadStatus.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+          }`}
+        >
+          {uploadStatus.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+          )}
+          <span>{uploadStatus.message}</span>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
