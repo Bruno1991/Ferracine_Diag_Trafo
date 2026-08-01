@@ -1,1 +1,36 @@
-[]
+[
+  {
+    "id": "MARCA-monofasico-15kva-7.967kv-240v/120v-vegetal-aluminio-novo",
+    "category": "NOVO",
+    "state": "NOVO",
+    "phaseType": "MONOFASICO",
+    "powerKva": 15,
+    "primaryVoltageV": 7967,
+    "secondaryVoltageV": 240,
+    "secondaryNeutralV": 120,
+    "impedancePercent": 2.5,
+    "oilTempC": 65,
+    "windingMaterial": "ALUMINIO",
+    "oilType": "VEGETAL",
+    "efficiencyLevel": "98.08%",
+    "brand": "",
+    "serialNumber": "",
+    "noLoadLossW": 50,
+    "loadLoss75cW": 220,
+    "totalLossW": 270,
+    "efficiencyPercent": 98.08,
+    "standardReference": "Placa Alimentada pelo Técnico",
+    "dateAdded": "2026-08-01",
+    "tapCount": 5,
+    "activeTapIndex": 3,
+    "tapVoltages": {
+      "1": 8660,
+      "2": 8314,
+      "3": 7967,
+      "4": 7621,
+      "5": 7275
+    },
+    "dataOrigin": "COMMUNITY",
+    "updatedAt": "2026-08-01T06:27:39.876Z"
+  }
+]
