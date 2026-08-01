@@ -1,7 +1,14 @@
 import initSqlJs, { Database as SqlDatabase, SqlJsStatic } from 'sql.js';
-import type { FuseRecommendation, PhaseType, TransformerSpec, TransformerType } from '../types';
+import type {
+  FuseRecommendation,
+  InmetroTransformerModel,
+  InmetroValidationStatus,
+  PhaseType,
+  TransformerSpec,
+  TransformerType
+} from '../types';
 
-export const OFFLINE_DATABASE_FILE = 'database/ferracine-trafo.sqlite';
+export const OFFLINE_DATABASE_FILE = 'database/ferracine-trafo.sqlite?schema=3';
 export const OFFLINE_WASM_FILE = 'vendor/sql-wasm.wasm';
 
 type OilType = 'MINERAL' | 'VEGETAL';
@@ -23,6 +30,7 @@ export interface OfflineDatabaseStatus {
   loaded: boolean;
   schemaVersion: number;
   transformerCount: number;
+  inmetroModelCount: number;
   fuseCount: number;
   voltageRangeCount: number;
   generatedAt: string;
@@ -31,12 +39,14 @@ export interface OfflineDatabaseStatus {
 
 let sqlRuntimePromise: Promise<SqlJsStatic> | null = null;
 let cachedFuses: FuseRecommendation[] = [];
+let cachedInmetroModels: InmetroTransformerModel[] = [];
 let cachedVoltageRanges: ProdistVoltageRange[] = [];
 let cachedRules = new Map<string, number>();
 let cachedStatus: OfflineDatabaseStatus = {
   loaded: false,
   schemaVersion: 0,
   transformerCount: 0,
+  inmetroModelCount: 0,
   fuseCount: 0,
   voltageRangeCount: 0,
   generatedAt: '',
@@ -121,6 +131,12 @@ function asNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function asOptionalNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function asCategory(value: unknown): TransformerType {
   const normalized = String(value || '').toUpperCase();
   return normalized === 'RECONDICIONADO' || normalized === 'USADO' ? normalized : 'NOVO';
@@ -185,6 +201,40 @@ function mapTransformer(row: Record<string, unknown>): TransformerSpec {
   };
 }
 
+function mapInmetroModel(row: Record<string, unknown>): InmetroTransformerModel {
+  return {
+    id: String(row.id || ''),
+    category: String(row.category) === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'NOVO',
+    manufacturer: String(row.manufacturer || 'FABRICANTE NÃO IDENTIFICADO'),
+    phaseType: asPhaseType(row.phaseType) === 'MONOFASICO' ? 'MONOFASICO' : 'TRIFASICO',
+    model: row.model ? String(row.model) : undefined,
+    powerKva: asNumber(row.powerKva),
+    voltageClassKv: asNumber(row.voltageClassKv),
+    pedestal: row.pedestal == null ? undefined : Boolean(asNumber(row.pedestal)),
+    nominalConventionalNoLoadW: asOptionalNumber(row.nominalConventionalNoLoadW),
+    nominalConventionalTotalW: asOptionalNumber(row.nominalConventionalTotalW),
+    nominalReliableNoLoadW: asOptionalNumber(row.nominalReliableNoLoadW),
+    nominalReliableTotalW: asOptionalNumber(row.nominalReliableTotalW),
+    criticalConventionalNoLoadW: asOptionalNumber(row.criticalConventionalNoLoadW),
+    criticalConventionalTotalW: asOptionalNumber(row.criticalConventionalTotalW),
+    criticalReliableNoLoadW: asOptionalNumber(row.criticalReliableNoLoadW),
+    criticalReliableTotalW: asOptionalNumber(row.criticalReliableTotalW),
+    temperatureRise55C: Boolean(asNumber(row.temperatureRise55C)),
+    temperatureRise65C: Boolean(asNumber(row.temperatureRise65C)),
+    temperatureRise75C: Boolean(asNumber(row.temperatureRise75C)),
+    windingCopper: Boolean(asNumber(row.windingCopper)),
+    windingAluminum: Boolean(asNumber(row.windingAluminum)),
+    nbiKv: row.nbiKv ? String(row.nbiKv) : undefined,
+    derivedLoadLossW: asOptionalNumber(row.derivedLoadLossW),
+    efficiencyPercent: asOptionalNumber(row.efficiencyPercent),
+    validationStatus: String(row.validationStatus) as InmetroValidationStatus,
+    validationNote: String(row.validationNote || ''),
+    diagnosticReady: Boolean(asNumber(row.diagnosticReady)),
+    sourceDocument: String(row.sourceDocument || ''),
+    sourcePage: asNumber(row.sourcePage)
+  };
+}
+
 function hydrateAuxiliaryData(db: SqlDatabase): void {
   cachedFuses = rowsAsObjects(
     db,
@@ -234,7 +284,7 @@ export async function parseSqliteData(
     const tables = new Set(
       rowsAsObjects(db, "SELECT name FROM sqlite_master WHERE type='table'").map((row) => String(row.name))
     );
-    for (const required of ['database_metadata', 'transformers', 'fuse_recommendations', 'prodist_voltage_ranges', 'diagnostic_rules']) {
+    for (const required of ['database_metadata', 'transformers', 'inmetro_models', 'fuse_recommendations', 'prodist_voltage_ranges', 'diagnostic_rules']) {
       if (!tables.has(required)) throw new Error(`Banco SQLite incompatível: tabela ${required} ausente.`);
     }
 
@@ -242,14 +292,19 @@ export async function parseSqliteData(
       rowsAsObjects(db, 'SELECT key, value FROM database_metadata').map((row) => [String(row.key), String(row.value)])
     );
     const schemaVersion = asNumber(metadata.get('schema_version'));
-    if (schemaVersion < 2) throw new Error(`Versão de banco não suportada: ${schemaVersion}.`);
+    if (schemaVersion < 3) throw new Error(`Versão de banco não suportada: ${schemaVersion}.`);
 
     const transformers = rowsAsObjects(db, 'SELECT * FROM transformers ORDER BY oilType, phaseType, voltageClassKv, powerKva').map(mapTransformer);
+    cachedInmetroModels = rowsAsObjects(
+      db,
+      'SELECT * FROM inmetro_models ORDER BY category, manufacturer, phaseType, voltageClassKv, powerKva, model'
+    ).map(mapInmetroModel);
     hydrateAuxiliaryData(db);
     cachedStatus = {
       loaded: true,
       schemaVersion,
       transformerCount: transformers.length,
+      inmetroModelCount: cachedInmetroModels.length,
       fuseCount: cachedFuses.length,
       voltageRangeCount: cachedVoltageRanges.length,
       generatedAt: metadata.get('generated_at') || '',
@@ -331,6 +386,11 @@ export async function processDatabaseFile(file: File): Promise<TransformerSpec[]
 
 export function getOfflineDatabaseStatus(): OfflineDatabaseStatus {
   return { ...cachedStatus };
+}
+
+/** Modelos PBE/INMETRO sem o número de etiqueta, que não é necessário ao diagnóstico. */
+export function getOfflineInmetroModels(): InmetroTransformerModel[] {
+  return cachedInmetroModels.map((item) => ({ ...item }));
 }
 
 /** Cópia somente-leitura da Tabela 16 carregada do SQLite ativo. */

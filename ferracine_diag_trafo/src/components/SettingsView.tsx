@@ -32,6 +32,7 @@ interface SettingsViewProps {
     loading: boolean;
     error: string;
     transformerCount: number;
+    inmetroModelCount: number;
     fuseCount: number;
     schemaVersion: number;
     generatedAt: string;
@@ -157,8 +158,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {databaseState.error && <StatusMessage type="error" text={databaseState.error} />}
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
-          <StatusCard label="Perfis normativos" value={databaseState.transformerCount} />
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mt-4">
+          <StatusCard label="Modelos INMETRO" value={databaseState.inmetroModelCount} />
+          <StatusCard label="Perfis ETU" value={databaseState.transformerCount} />
           <StatusCard label="Elos ETU" value={databaseState.fuseCount} />
           <StatusCard label="Placas de campo" value={communityCount} />
           <StatusCard label="Esquema" value={databaseState.schemaVersion || '-'} />

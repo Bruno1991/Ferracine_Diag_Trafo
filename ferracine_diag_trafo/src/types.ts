@@ -1,6 +1,45 @@
 export type TransformerType = 'NOVO' | 'RECONDICIONADO' | 'USADO';
 export type PhaseType = 'TRIFASICO' | 'BIFASICO' | 'MONOFASICO';
 export type MeasurementCycleMode = '5s' | '5m' | '10m';
+export type TransformerCatalogSource = 'INMETRO' | 'ETU' | 'FIELD';
+export type InmetroValidationStatus =
+  | 'COERENTE_ETU'
+  | 'COERENTE_SEM_REFERENCIA_ETU'
+  | 'ACIMA_LIMITE_ETU'
+  | 'DADOS_INCONSISTENTES'
+  | 'SEM_DADOS_DE_PERDAS';
+
+export interface InmetroTransformerModel {
+  id: string;
+  category: 'NOVO' | 'RECONDICIONADO';
+  manufacturer: string;
+  phaseType: Exclude<PhaseType, 'BIFASICO'>;
+  model?: string;
+  powerKva: number;
+  voltageClassKv: number;
+  pedestal?: boolean;
+  nominalConventionalNoLoadW?: number;
+  nominalConventionalTotalW?: number;
+  nominalReliableNoLoadW?: number;
+  nominalReliableTotalW?: number;
+  criticalConventionalNoLoadW?: number;
+  criticalConventionalTotalW?: number;
+  criticalReliableNoLoadW?: number;
+  criticalReliableTotalW?: number;
+  temperatureRise55C: boolean;
+  temperatureRise65C: boolean;
+  temperatureRise75C: boolean;
+  windingCopper: boolean;
+  windingAluminum: boolean;
+  nbiKv?: string;
+  derivedLoadLossW?: number;
+  efficiencyPercent?: number;
+  validationStatus: InmetroValidationStatus;
+  validationNote: string;
+  diagnosticReady: boolean;
+  sourceDocument: string;
+  sourcePage: number;
+}
 
 export interface TransformerSpec {
   id: string;

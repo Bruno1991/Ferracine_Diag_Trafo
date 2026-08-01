@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseSqliteData } from '../src/utils/sqliteAndSplitLoader';
+import { getOfflineInmetroModels, parseSqliteData } from '../src/utils/sqliteAndSplitLoader';
 import { performFullDiagnosticAnalysis, processSingleMeasurement } from '../src/utils/electricalCalculations';
 import type { SingleMeasurement } from '../src/types';
 
@@ -10,6 +10,15 @@ function assert(condition: unknown, message: string): asserts condition {
 
 const databasePath = join(process.cwd(), 'public', 'database', 'ferracine-trafo.sqlite');
 const transformers = await parseSqliteData(new Uint8Array(readFileSync(databasePath)), 'BUNDLED');
+const inmetroModels = getOfflineInmetroModels();
+assert(inmetroModels.length === 1183, `Esperados 1.183 modelos INMETRO; obtidos ${inmetroModels.length}.`);
+assert(inmetroModels.filter((item) => item.category === 'NOVO').length === 613, 'A lista INMETRO de novos está incompleta.');
+assert(inmetroModels.filter((item) => item.category === 'RECONDICIONADO').length === 570, 'A lista INMETRO de recondicionados está incompleta.');
+assert(inmetroModels.every((item) => !('labelNumber' in item)), 'O número de etiqueta não deve integrar o banco do app.');
+assert(
+  inmetroModels.filter((item) => item.category === 'RECONDICIONADO').every((item) => !item.diagnosticReady),
+  'Linhas recondicionadas sem perdas não podem alimentar cálculos de diagnóstico.'
+);
 const transformer = transformers.find((item) =>
   item.phaseType === 'TRIFASICO' &&
   item.oilType === 'VEGETAL' &&
@@ -39,6 +48,7 @@ assert(analysis.iticAnalysis.classifications.every((item) => item.status === 'PR
 
 console.log(JSON.stringify({
   fdM2: measurements[1].fdtpPercent,
+  inmetroModels: inmetroModels.length,
   fuse: analysis.recommendedFuse.fuseCode,
   dataQuality: analysis.dataQuality.status,
   issues: analysis.dataQuality.issues.map((issue) => `${issue.measurementId || 'bloco'}:${issue.code}:${issue.severity}`),

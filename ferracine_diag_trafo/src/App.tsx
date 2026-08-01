@@ -12,11 +12,16 @@ import { DatabaseExplorer } from './components/DatabaseExplorer';
 import { NormsAndCalculationsView } from './components/NormsAndCalculationsView';
 import { SettingsView } from './components/SettingsView';
 
-import { InitialDiagnosticData, TransformerSpec, SingleMeasurement, MeasurementCycleMode } from './types';
+import { InitialDiagnosticData, InmetroTransformerModel, TransformerSpec, SingleMeasurement, MeasurementCycleMode } from './types';
 import { processSingleMeasurement, performFullDiagnosticAnalysis } from './utils/electricalCalculations';
 import { generateTransformerDiagnosticPdf } from './utils/pdfGenerator';
 import { exportDiagnosticToExcel } from './utils/excelExporter';
-import { getOfflineDatabaseStatus, loadBundledOfflineDatabase, type OfflineDatabaseStatus } from './utils/sqliteAndSplitLoader';
+import {
+  getOfflineDatabaseStatus,
+  getOfflineInmetroModels,
+  loadBundledOfflineDatabase,
+  type OfflineDatabaseStatus
+} from './utils/sqliteAndSplitLoader';
 import { isCommunityTransformer } from './utils/githubSync';
 
 export default function App() {
@@ -82,11 +87,13 @@ export default function App() {
     loading: true,
     error: '',
     transformerCount: 0,
+    inmetroModelCount: 0,
     fuseCount: 0,
     schemaVersion: 0,
     generatedAt: '',
     source: 'BUNDLED' as OfflineDatabaseStatus['source']
   });
+  const [inmetroModels, setInmetroModels] = useState<InmetroTransformerModel[]>([]);
 
   // Load the single bundled SQLite database on mount.
   useEffect(() => {
@@ -108,10 +115,12 @@ export default function App() {
           });
         }
         const status = getOfflineDatabaseStatus();
+        setInmetroModels(getOfflineInmetroModels());
         setOfflineDatabaseState({
           loading: false,
           error: '',
           transformerCount: status.transformerCount,
+          inmetroModelCount: status.inmetroModelCount,
           fuseCount: status.fuseCount,
           schemaVersion: status.schemaVersion,
           generatedAt: status.generatedAt,
@@ -168,12 +177,14 @@ export default function App() {
     normative.forEach((item) => map.set(item.id, { ...item, dataOrigin: 'NORMATIVE' }));
     communityTransformers.forEach((item) => map.set(item.id, { ...item, dataOrigin: 'COMMUNITY' }));
     const merged = sanitizeTransformersList(Array.from(map.values()));
+    setInmetroModels(getOfflineInmetroModels());
     setTransformers(merged);
     localStorage.setItem('tx_analytix_transformers', JSON.stringify(merged));
     setOfflineDatabaseState({
       loading: false,
       error: '',
       transformerCount: status.transformerCount,
+      inmetroModelCount: status.inmetroModelCount,
       fuseCount: status.fuseCount,
       schemaVersion: status.schemaVersion,
       generatedAt: status.generatedAt,
@@ -528,8 +539,10 @@ export default function App() {
         {activeTab === 'DATABASE' && (
           <DatabaseExplorer
             transformers={transformers}
+            inmetroModels={inmetroModels}
             onAddTransformer={handleAddTransformer}
             onUpdateTransformers={handleUpdateTransformers}
+            onInmetroModelsUpdated={setInmetroModels}
           />
         )}
 

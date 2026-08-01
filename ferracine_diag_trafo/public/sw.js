@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ferracine-diag-trafo-v3';
+const CACHE_NAME = 'ferracine-diag-trafo-v4';
 
 function scopedUrl(path) {
   return new URL(path, self.registration.scope).toString();
@@ -17,7 +17,7 @@ async function precacheApplication() {
 
   await cache.addAll([
     ...new Set(referencedAssets),
-    scopedUrl('database/ferracine-trafo.sqlite'),
+    scopedUrl('database/ferracine-trafo.sqlite?schema=3'),
     scopedUrl('vendor/sql-wasm.wasm'),
     scopedUrl('icon.png')
   ]);
