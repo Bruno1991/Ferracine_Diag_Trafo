@@ -1,11 +1,10 @@
-import { SingleMeasurement, TransformerSpec, DiagnosticAnalysis, ProdistStatus, FuseRecommendation, PhaseType, TransformerType, IticBlockAnalysis, IticMeasurementClassification, IticStatus } from '../types';
+import { SingleMeasurement, TransformerSpec, DiagnosticAnalysis, ProdistStatus, FuseRecommendation, PhaseType, TransformerType, IticBlockAnalysis, IticMeasurementClassification, IticStatus, MeasurementCycleMode } from '../types';
 import { classifyProdistVoltage, findFuseInOfflineDatabase, getDiagnosticRuleValue } from './sqliteAndSplitLoader';
 
 /**
- * Avalia o bloco de 3 medições (janela de 15 min - intervalo de 5 min)
- * segundo os critérios da Curva ITIC para Regime Permanente (t > 10s)
- * Limite Superior: 110% da Tensão Nominal
- * Limite Inferior: 90% da Tensão Nominal
+ * Triagem ponto a ponto pelas faixas exatas do PRODIST carregadas do SQLite.
+ * O nome da função é preservado por compatibilidade com componentes antigos.
+ * Isto não declara conformidade ITIC: a curva ITIC exige magnitude e duração do evento.
  */
 export function evaluateIticBlock(
   measurements: SingleMeasurement[],
@@ -16,8 +15,8 @@ export function evaluateIticBlock(
 
   if (validMeas.length === 0) {
     return {
-      windowStatus: 'AGUARDANDO MEDIÇÕES' as any,
-      windowStatusText: 'Aguardando preenchimento das medições para avaliação da curva ITIC / CBEMA (15 min).',
+      windowStatus: 'AGUARDANDO_MEDICOES',
+      windowStatusText: 'Aguardando medições para a triagem de tensão PRODIST.',
       hasViolation: false,
       classifications: [],
       violationCount: 0
@@ -31,20 +30,20 @@ export function evaluateIticBlock(
     const roundedV = Math.round(measV * 10) / 10;
     const roundedI = Math.round(m.avgCurrent * 10) / 10;
 
-    let status: IticStatus = 'ZONA_SEGURA';
-    let statusText = 'Dentro do envelope de segurança ITIC (90% - 110%)';
-
-    if (roundedPercent > 110.0) {
-      status = 'SOBRETENSÃO_SUSTENTADA';
-      statusText = `Sobretensão Sustentada ITIC (${roundedPercent}% > 110%)`;
-    } else if (roundedPercent < 90.0) {
-      status = 'SUBTENSÃO_SUSTENTADA';
-      statusText = `Subtensão Sustentada ITIC (${roundedPercent}% < 90%)`;
-    }
+    const phaseVoltages = transformer.phaseType === 'TRIFASICO'
+      ? [m.vab, m.vbc, m.vca].filter((value) => value > 0)
+      : [measV];
+    const phaseClassifications = phaseVoltages.map((value) => ({ value, result: classifyProdistVoltage(value, nominalV, 'FF') }));
+    const severity = { ADEQUADA: 0, PRECARIA: 1, CRITICA: 2 } as const;
+    const worst = phaseClassifications.sort((a, b) => severity[b.result?.status || 'CRITICA'] - severity[a.result?.status || 'CRITICA'])[0];
+    const status: IticStatus = worst?.result?.status || 'CRITICA';
+    const statusText = worst?.result
+      ? `${status}: fases ${phaseVoltages.map((value) => `${value} V`).join('/')} (adequada ${worst.result.range.adequateMinV} a ${worst.result.range.adequateMaxV} V)`
+      : `${status}: faixa nominal não encontrada no banco offline`;
 
     return {
       measurementId: m.id,
-      timestamp: m.timestamp || `14:0${(m.id - 1) * 5}`,
+      timestamp: m.timestamp || 'SEM HORÁRIO',
       voltageV: roundedV,
       nominalV,
       voltagePercent: roundedPercent,
@@ -54,13 +53,13 @@ export function evaluateIticBlock(
     };
   });
 
-  const violationCount = classifications.filter((c) => c.status !== 'ZONA_SEGURA').length;
+  const violationCount = classifications.filter((c) => c.status !== 'ADEQUADA').length;
   const hasViolation = violationCount > 0;
 
-  const windowStatus = hasViolation ? 'ALERTA_DE_VIOLAÇÃO_ITIC' : 'DENTRO_DOS_LIMITES_ITIC';
+  const windowStatus = hasViolation ? 'ALERTA_PRODIST' : 'CONFORME_PRODIST';
   const windowStatusText = hasViolation
-    ? `Alerta ITIC: ${violationCount} de ${classifications.length} medição(ões) fora da Zona Segura (90% - 110%).`
-    : 'Bloco Aprovado: Todas as 3 medições em regime permanente estão dentro da Zona Segura ITIC (90% - 110%).';
+    ? `Alerta PRODIST: ${violationCount} de ${classifications.length} medição(ões) fora da faixa adequada.`
+    : 'Todas as medições estão na faixa adequada de tensão PRODIST.';
 
   return {
     windowStatus,
@@ -308,12 +307,146 @@ export function findRecommendedFuse(
   return findFuseInOfflineDatabase(primaryVoltageV, powerKva, phaseType, oilType);
 }
 
+function timestampToSeconds(timestamp: string): number | null {
+  const match = timestamp.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] || 0);
+}
+
+function validateMeasurementData(
+  measurements: SingleMeasurement[],
+  transformer: TransformerSpec,
+  cycleMode: MeasurementCycleMode
+): DiagnosticAnalysis['dataQuality'] {
+  const issues: DiagnosticAnalysis['dataQuality']['issues'] = [];
+  const valid = measurements.filter((m) => m.avgVoltagePhasePhase > 0 || m.avgVoltagePhaseNeutral > 0);
+  const fdLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
+  const currentLimit = getDiagnosticRuleValue('current_unbalance_limit_percent', 15.0);
+
+  valid.forEach((m) => {
+    if (transformer.phaseType === 'TRIFASICO') {
+      const ff = [m.vab, m.vbc, m.vca];
+      const fn = [m.van, m.vbn, m.vcn];
+      const ffLabels = ['Vab', 'Vbc', 'Vca'];
+      const fnLabels = ['Van', 'Vbn', 'Vcn'];
+      const ffOut = ff.map((value, index) => ({ label: ffLabels[index], value, result: classifyProdistVoltage(value, transformer.secondaryVoltageV, 'FF') }))
+        .filter((item) => item.value > 0 && item.result?.status !== 'ADEQUADA');
+      const fnOut = fn.map((value, index) => ({ label: fnLabels[index], value, result: classifyProdistVoltage(value, transformer.secondaryNeutralV, 'FN') }))
+        .filter((item) => item.value > 0 && item.result?.status !== 'ADEQUADA');
+      if (ffOut.length || fnOut.length) {
+        const details = [...ffOut, ...fnOut].map((item) => `${item.label}=${item.value} V (${item.result?.status})`).join('; ');
+        const critical = [...ffOut, ...fnOut].some((item) => item.result?.status === 'CRITICA');
+        issues.push({
+          measurementId: m.id,
+          code: 'TENSAO_PRODIST',
+          severity: critical ? 'CRITICAL' : 'WARNING',
+          title: `M${m.id}: tensão fora da faixa adequada`,
+          message: details
+        });
+      }
+
+      if (fn.every((value) => value > 0) && ff.every((value) => value > 0)) {
+        const pairs: Array<[number, number, number, string]> = [
+          [m.van, m.vbn, m.vab, 'Van/Vbn/Vab'],
+          [m.vbn, m.vcn, m.vbc, 'Vbn/Vcn/Vbc'],
+          [m.vcn, m.van, m.vca, 'Vcn/Van/Vca']
+        ];
+        const impossible = pairs.filter(([v1, v2, line]) => line > (v1 + v2) * 1.02 || line < Math.abs(v1 - v2) * 0.98);
+        const avgFn = fn.reduce((sum, value) => sum + value, 0) / 3;
+        const avgFf = ff.reduce((sum, value) => sum + value, 0) / 3;
+        const expectedFf = Math.sqrt(3) * avgFn;
+        const ratioError = expectedFf > 0 ? Math.abs(avgFf - expectedFf) / expectedFf : 0;
+        if (impossible.length > 0 || ratioError > 0.05) {
+          const pairText = impossible.length > 0 ? `; combinação impossível: ${impossible.map((pair) => pair[3]).join(', ')}` : '';
+          issues.push({
+            measurementId: m.id,
+            code: 'RELACAO_TENSAO',
+            severity: 'CRITICAL',
+            title: `M${m.id}: relação F-N/F-F inconsistente`,
+            message: `Média F-N ${avgFn.toFixed(1)} V implica aproximadamente ${expectedFf.toFixed(1)} V F-F em sistema trifásico equilibrado, mas foi informado ${avgFf.toFixed(1)} V${pairText}. Verifique escala, ligação e instrumento.`
+          });
+        }
+      }
+
+      if (m.fdtpPercent > fdLimit) {
+        issues.push({
+          measurementId: m.id,
+          code: 'FDTP',
+          severity: 'CRITICAL',
+          title: `M${m.id}: desbalanço de tensão crítico`,
+          message: `FDTP ${m.fdtpPercent.toFixed(2)}% excede o limite BT de ${fdLimit.toFixed(1)}%.`
+        });
+      }
+
+      const currents = [m.ia, m.ib, m.ic];
+      if (currents.every((value) => value >= 0) && currents.some((value) => value > 0)) {
+        const avg = currents.reduce((sum, value) => sum + value, 0) / 3;
+        const unbalance = avg > 0 ? Math.max(...currents.map((value) => Math.abs(value - avg))) / avg * 100 : 0;
+        if (unbalance > currentLimit) {
+          issues.push({
+            measurementId: m.id,
+            code: 'DESEQUILIBRIO_CORRENTE',
+            severity: unbalance > 30 ? 'CRITICAL' : 'WARNING',
+            title: `M${m.id}: correntes fortemente desbalanceadas`,
+            message: `Ia=${m.ia} A, Ib=${m.ib} A, Ic=${m.ic} A; desvio máximo ${unbalance.toFixed(1)}% (limiar de triagem do app: ${currentLimit.toFixed(0)}%).`
+          });
+        }
+
+        if ((m.in || 0) > 0) {
+          const expectedNeutral = Math.sqrt(Math.max(0, m.ia ** 2 + m.ib ** 2 + m.ic ** 2 - m.ia * m.ib - m.ib * m.ic - m.ic * m.ia));
+          const neutralTolerance = Math.max(5, expectedNeutral * 0.25);
+          if (Math.abs((m.in || 0) - expectedNeutral) > neutralTolerance) {
+            issues.push({
+              measurementId: m.id,
+              code: 'CORRENTE_NEUTRO',
+              severity: 'WARNING',
+              title: `M${m.id}: corrente de neutro requer conferência`,
+              message: `In informado ${(m.in || 0).toFixed(1)} A; estimativa fasorial a 120° ${expectedNeutral.toFixed(1)} A. Conferir ângulos, harmônicos, pinça e ponto de medição.`
+            });
+          }
+        }
+      }
+    }
+
+    if (m.loadingPercent > 100) {
+      issues.push({
+        measurementId: m.id,
+        code: 'CARREGAMENTO',
+        severity: m.loadingPercent > 120 ? 'CRITICAL' : 'WARNING',
+        title: `M${m.id}: sobrecarga`,
+        message: `Carregamento ${m.loadingPercent.toFixed(1)}% (${m.totalKva.toFixed(2)} kVA) acima da potência nominal.`
+      });
+    }
+  });
+
+  const times = valid.map((m) => ({ id: m.id, seconds: timestampToSeconds(m.timestamp) })).filter((item): item is { id: number; seconds: number } => item.seconds !== null);
+  const expectedSeconds = cycleMode === '5s' ? 5 : cycleMode === '5m' ? 300 : 600;
+  const tolerance = cycleMode === '5s' ? 2 : expectedSeconds * 0.2;
+  for (let index = 1; index < times.length; index += 1) {
+    let elapsed = times[index].seconds - times[index - 1].seconds;
+    if (elapsed < -43200) elapsed += 86400; // virada legítima de meia-noite
+    if (elapsed <= 0) {
+      issues.push({ code: 'CRONOLOGIA', severity: 'CRITICAL', title: 'Ordem temporal inválida', message: `M${times[index].id} (${measurements.find((m) => m.id === times[index].id)?.timestamp}) não é posterior à medição anterior.` });
+    } else if (elapsed < expectedSeconds - tolerance) {
+      issues.push({ code: 'INTERVALO', severity: 'WARNING', title: 'Intervalo menor que o ciclo selecionado', message: `Intervalo M${times[index - 1].id}→M${times[index].id}: ${elapsed} s; mínimo esperado ${expectedSeconds} s para o ciclo ${cycleMode}.` });
+    }
+  }
+
+  const hasCritical = issues.some((issue) => issue.severity === 'CRITICAL');
+  return {
+    status: hasCritical ? 'INCONSISTENTE' : issues.length > 0 ? 'ALERTA' : 'VALIDO',
+    issues,
+    canIssueTapRecommendation: !hasCritical
+  };
+}
+
 /**
  * Executa análise completa das 3 medições
  */
 export function performFullDiagnosticAnalysis(
   measurements: SingleMeasurement[],
-  transformer: TransformerSpec
+  transformer: TransformerSpec,
+  cycleMode: MeasurementCycleMode = '5m'
 ): DiagnosticAnalysis {
   const validMeas = measurements.filter((m) => m.avgVoltagePhasePhase > 0 || m.avgVoltagePhaseNeutral > 0);
   const count = validMeas.length || 1;
@@ -363,10 +496,10 @@ export function performFullDiagnosticAnalysis(
   const avgLoadingPercent = transformer.powerKva > 0 ? (avgKvaMeasured / transformer.powerKva) * 100 : 0;
 
   let loadingCondition: 'SUB-CARREGADO' | 'IDEAL' | 'ELEVADO' | 'SOBRECARGA_MODERADA' | 'SOBRECARGA_CRITICA' = 'IDEAL';
-  if (avgLoadingPercent < 45) loadingCondition = 'SUB-CARREGADO';
-  else if (avgLoadingPercent <= 85) loadingCondition = 'IDEAL';
-  else if (avgLoadingPercent <= 100) loadingCondition = 'ELEVADO';
-  else if (avgLoadingPercent <= 120) loadingCondition = 'SOBRECARGA_MODERADA';
+  if (maxLoadingPercent < 45) loadingCondition = 'SUB-CARREGADO';
+  else if (maxLoadingPercent <= 85) loadingCondition = 'IDEAL';
+  else if (maxLoadingPercent <= 100) loadingCondition = 'ELEVADO';
+  else if (maxLoadingPercent <= 120) loadingCondition = 'SOBRECARGA_MODERADA';
   else loadingCondition = 'SOBRECARGA_CRITICA';
 
   // Desbalanço
@@ -405,6 +538,8 @@ export function performFullDiagnosticAnalysis(
     transformer.phaseType,
     transformer.oilType || 'MINERAL'
   );
+
+  const dataQuality = validateMeasurementData(measurements, transformer, cycleMode);
 
   // Phase Specific Validation Rules & Alerts
   const phaseAlerts: DiagnosticAnalysis['phaseAlerts'] = [];
@@ -543,6 +678,11 @@ export function performFullDiagnosticAnalysis(
     }
   }
 
+  if (!dataQuality.canIssueTapRecommendation) {
+    recommendedTap = 'RECOMENDAÇÃO DE TAP BLOQUEADA';
+    tapAdjustmentAdvice = 'Os dados possuem inconsistências críticas. Confirme ligação, escalas, instrumentos, sequência temporal e repita a coleta antes de alterar o TAP.';
+  }
+
   return {
     avgVan: Math.round(avgVan * 10) / 10,
     avgVbn: Math.round(avgVbn * 10) / 10,
@@ -570,6 +710,8 @@ export function performFullDiagnosticAnalysis(
     voltageUnbalancePercentNema: Math.round(voltageUnbalancePercentNema * 100) / 100,
     currentUnbalancePercent: Math.round(currentUnbalancePercent * 100) / 100,
     phaseAlerts,
+    cycleMode,
+    dataQuality,
     prodist,
     iticAnalysis,
     estimatedCopperLossW: Math.round(estimatedCopperLossW),

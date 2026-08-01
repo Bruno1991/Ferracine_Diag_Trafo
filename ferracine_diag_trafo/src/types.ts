@@ -1,5 +1,6 @@
 export type TransformerType = 'NOVO' | 'RECONDICIONADO' | 'USADO';
 export type PhaseType = 'TRIFASICO' | 'BIFASICO' | 'MONOFASICO';
+export type MeasurementCycleMode = '5s' | '5m' | '10m';
 
 export interface TransformerSpec {
   id: string;
@@ -121,8 +122,9 @@ export interface ProdistStatus {
   fdtpPercent: number;
 }
 
-export type IticStatus = 'ZONA_SEGURA' | 'SOBRETENSÃO_SUSTENTADA' | 'SUBTENSÃO_SUSTENTADA';
-export type IticBlockStatus = 'ALERTA_DE_VIOLAÇÃO_ITIC' | 'DENTRO_DOS_LIMITES_ITIC';
+/** Mantido com este nome por compatibilidade; representa a triagem de tensão PRODIST. */
+export type IticStatus = 'ADEQUADA' | 'PRECARIA' | 'CRITICA';
+export type IticBlockStatus = 'AGUARDANDO_MEDICOES' | 'CONFORME_PRODIST' | 'ALERTA_PRODIST';
 
 export interface IticMeasurementClassification {
   measurementId: number;
@@ -179,6 +181,19 @@ export interface DiagnosticAnalysis {
     message: string;
     severity: 'CRITICAL' | 'WARNING';
   }[];
+
+  cycleMode: MeasurementCycleMode;
+  dataQuality: {
+    status: 'VALIDO' | 'ALERTA' | 'INCONSISTENTE';
+    issues: Array<{
+      measurementId?: number;
+      code: 'CRONOLOGIA' | 'INTERVALO' | 'RELACAO_TENSAO' | 'TENSAO_PRODIST' | 'FDTP' | 'DESEQUILIBRIO_CORRENTE' | 'CORRENTE_NEUTRO' | 'CARREGAMENTO';
+      severity: 'CRITICAL' | 'WARNING';
+      title: string;
+      message: string;
+    }>;
+    canIssueTapRecommendation: boolean;
+  };
   
   prodist: ProdistStatus;
   iticAnalysis: IticBlockAnalysis;

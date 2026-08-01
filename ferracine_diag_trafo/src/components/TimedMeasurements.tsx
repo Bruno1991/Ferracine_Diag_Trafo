@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
-import { SingleMeasurement, TransformerSpec } from '../types';
+import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
 import { processSingleMeasurement } from '../utils/electricalCalculations';
 
 interface TimedMeasurementsProps {
   measurements: SingleMeasurement[];
   onChangeMeasurement: (index: number, updated: SingleMeasurement) => void;
   selectedTransformer: TransformerSpec;
+  cycleMode: MeasurementCycleMode;
+  onCycleModeChange: (mode: MeasurementCycleMode) => void;
   onAllCompleted?: () => void;
 }
 
@@ -14,10 +16,10 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   measurements,
   onChangeMeasurement,
   selectedTransformer,
+  cycleMode,
+  onCycleModeChange,
   onAllCompleted
 }) => {
-  // Configurable interval cycle (5 seg, 5 min, or 10 min)
-  const [cycleMode, setCycleMode] = useState<'5s' | '5m' | '10m'>('5m');
   const intervalSeconds = cycleMode === '5s' ? 5 : cycleMode === '5m' ? 300 : 600;
   const intervalMinutes = cycleMode === '5s' ? 0.0833 : cycleMode === '5m' ? 5 : 10;
 
@@ -172,6 +174,11 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
               Coleta de tensões fase-neutro, fase-fase e correntes para diagnóstico contínuo
             </p>
+            {cycleMode === '5s' && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
+                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; não representa campanha regulatória PRODIST.
+              </p>
+            )}
           </div>
         </div>
 
@@ -181,7 +188,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCycleMode('5s');
+                onCycleModeChange('5s');
                 if (!isTimer1Running) setTimer1Seconds(5);
                 if (!isTimer2Running) setTimer2Seconds(5);
               }}
@@ -196,7 +203,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCycleMode('5m');
+                onCycleModeChange('5m');
                 if (!isTimer1Running) setTimer1Seconds(300);
                 if (!isTimer2Running) setTimer2Seconds(300);
               }}
@@ -211,7 +218,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCycleMode('10m');
+                onCycleModeChange('10m');
                 if (!isTimer1Running) setTimer1Seconds(600);
                 if (!isTimer2Running) setTimer2Seconds(600);
               }}

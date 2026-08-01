@@ -6,7 +6,7 @@ export const OFFLINE_WASM_FILE = 'vendor/sql-wasm.wasm';
 
 type OilType = 'MINERAL' | 'VEGETAL';
 
-interface ProdistVoltageRange {
+export interface ProdistVoltageRange {
   system: string;
   connection: 'FF' | 'FN';
   nominalV: number;
@@ -103,15 +103,15 @@ async function persistDatabase(sqliteBuffer: Uint8Array): Promise<void> {
 }
 
 function localAssetUrl(file: string): string {
-  const base = import.meta.env.BASE_URL || '/';
+  const base = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
   return `${base.endsWith('/') ? base : `${base}/`}${file}`;
 }
 
 function getSqlRuntime(): Promise<SqlJsStatic> {
   if (!sqlRuntimePromise) {
-    sqlRuntimePromise = initSqlJs({
-      locateFile: () => localAssetUrl(OFFLINE_WASM_FILE)
-    });
+    sqlRuntimePromise = typeof window === 'undefined'
+      ? initSqlJs()
+      : initSqlJs({ locateFile: () => localAssetUrl(OFFLINE_WASM_FILE) });
   }
   return sqlRuntimePromise;
 }
@@ -331,6 +331,16 @@ export async function processDatabaseFile(file: File): Promise<TransformerSpec[]
 
 export function getOfflineDatabaseStatus(): OfflineDatabaseStatus {
   return { ...cachedStatus };
+}
+
+/** Cópia somente-leitura da Tabela 16 carregada do SQLite ativo. */
+export function getOfflineFuseRecommendations(): FuseRecommendation[] {
+  return cachedFuses.map((item) => ({ ...item }));
+}
+
+/** Faixas nominais exatas do PRODIST carregadas do SQLite ativo. */
+export function getOfflineProdistVoltageRanges(): ProdistVoltageRange[] {
+  return cachedVoltageRanges.map((item) => ({ ...item }));
 }
 
 export function getDiagnosticRuleValue(key: string, fallback: number): number {

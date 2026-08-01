@@ -40,6 +40,33 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       </div>
 
+      {/* Qualidade e coerência dos dados de entrada */}
+      {!isAmedir && (
+        <div className={`p-3 rounded-lg border space-y-2 ${
+          analysis.dataQuality.status === 'INCONSISTENTE'
+            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800'
+            : analysis.dataQuality.status === 'ALERTA'
+            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800'
+            : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800'
+        }`}>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase">
+            <AlertOctagon className="w-4 h-4" />
+            <span>Qualidade dos dados: {analysis.dataQuality.status} — ciclo {analysis.cycleMode === '5s' ? '5 s (modo de teste)' : analysis.cycleMode}</span>
+          </div>
+          {analysis.dataQuality.issues.length === 0 ? (
+            <p className="text-[11px] font-mono">Nenhuma inconsistência detectada nas medições informadas.</p>
+          ) : (
+            <div className="space-y-1">
+              {analysis.dataQuality.issues.map((issue, index) => (
+                <p key={`${issue.code}-${issue.measurementId || 0}-${index}`} className="text-[11px] font-mono">
+                  <strong>{issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA'} — {issue.title}:</strong> {issue.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Phase Specific Validation Alerts */}
       {analysis.phaseAlerts && analysis.phaseAlerts.length > 0 && (
         <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-3 rounded-lg space-y-2">
@@ -98,7 +125,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
           </p>
         </div>
 
-        {/* Status 2: Suportabilidade Curva ITIC (Janela 15 min / 3 Medições) */}
+        {/* Status 2: classificação ponto a ponto PRODIST */}
         <div className={`p-3 rounded-lg border flex flex-col justify-between ${
           isAmedir
             ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
@@ -108,7 +135,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         }`}>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-slate-600 dark:text-slate-400">
-              CURVA ITIC (JANELA 15 MIN)
+              PONTOS FORA DA FAIXA ADEQUADA
             </div>
             <div className={`text-sm font-extrabold font-mono flex items-center gap-1.5 ${
               isAmedir ? 'text-slate-600 dark:text-slate-400' : analysis.iticAnalysis.hasViolation ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'
@@ -124,7 +151,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </div>
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
-            {isAmedir ? 'Violações: — (Aguardando teste)' : `Violações: ${analysis.iticAnalysis.violationCount} de ${analysis.iticAnalysis.classifications.length} (Limites: 90% a 110%)`}
+            {isAmedir ? 'Aguardando teste' : `${analysis.iticAnalysis.violationCount} de ${analysis.iticAnalysis.classifications.length} pela tabela PRODIST do banco`}
           </p>
         </div>
 
@@ -136,7 +163,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </div>
             <div className="text-lg font-extrabold text-amber-800 dark:text-amber-300 font-mono">
               {transformer.powerKva > 0 && transformer.primaryVoltageV > 0
-                ? (analysis.recommendedFuse ? `Elo ${analysis.recommendedFuse.fuseCode}` : 'Elo 3H')
+                ? (analysis.recommendedFuse ? `Elo ${analysis.recommendedFuse.fuseCode}` : 'NÃO ENCONTRADO')
                 : '—'}
             </div>
           </div>
@@ -158,7 +185,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </div>
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
-            Condição: <span className="font-bold text-slate-900 dark:text-slate-100">{analysis.loadingCondition}</span>
+            Pico: <strong>{analysis.maxLoadingPercent}%</strong> | Média: <strong>{analysis.avgLoadingPercent}%</strong> | Condição pelo pico: <span className="font-bold text-slate-900 dark:text-slate-100">{analysis.loadingCondition}</span>
           </p>
         </div>
       </div>
@@ -198,12 +225,12 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       </div>
 
-      {/* ITIC 15-Min 3-Measurement Detailed Breakdown Table */}
+      {/* Triagem temporal PRODIST */}
       <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
             <Activity className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span>ENVELOPE ITIC DE REGIME PERMANENTE (3 MEDIÇÕES / JANELA DE 15 MIN)</span>
+            <span>CLASSIFICAÇÃO TEMPORAL DE TENSÃO — PRODIST</span>
           </h3>
           <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
             analysis.iticAnalysis.hasViolation
@@ -223,13 +250,13 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
                 <th className="py-1.5 px-2 text-right font-bold border-r border-slate-200 dark:border-slate-700">Tensão (V)</th>
                 <th className="py-1.5 px-2 text-right font-bold border-r border-slate-200 dark:border-slate-700">Tensão (% Nominal)</th>
                 <th className="py-1.5 px-2 text-right font-bold border-r border-slate-200 dark:border-slate-700">Corrente (A)</th>
-                <th className="py-1.5 px-2 text-center font-bold border-r border-slate-200 dark:border-slate-700">Faixa Segura (90%-110%)</th>
-                <th className="py-1.5 px-2 text-left font-bold">Classificação ITIC</th>
+                <th className="py-1.5 px-2 text-center font-bold border-r border-slate-200 dark:border-slate-700">Faixa adequada</th>
+                <th className="py-1.5 px-2 text-left font-bold">Classificação PRODIST</th>
               </tr>
             </thead>
             <tbody>
               {analysis.iticAnalysis.classifications.map((item) => {
-                const isOK = item.status === 'ZONA_SEGURA';
+                const isOK = item.status === 'ADEQUADA';
                 return (
                   <tr key={item.measurementId} className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 font-bold text-slate-800 dark:text-slate-200">

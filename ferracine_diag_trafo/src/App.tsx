@@ -12,7 +12,7 @@ import { DatabaseExplorer } from './components/DatabaseExplorer';
 import { NormsAndCalculationsView } from './components/NormsAndCalculationsView';
 import { SettingsView } from './components/SettingsView';
 
-import { InitialDiagnosticData, TransformerSpec, SingleMeasurement } from './types';
+import { InitialDiagnosticData, TransformerSpec, SingleMeasurement, MeasurementCycleMode } from './types';
 import { processSingleMeasurement, performFullDiagnosticAnalysis } from './utils/electricalCalculations';
 import { generateTransformerDiagnosticPdf } from './utils/pdfGenerator';
 import { exportDiagnosticToExcel } from './utils/excelExporter';
@@ -214,6 +214,7 @@ export default function App() {
 
   const [selectedTransformer, setSelectedTransformer] = useState<TransformerSpec>(cleanTransformer);
   const [selectedTap, setSelectedTap] = useState<string>('');
+  const [cycleMode, setCycleMode] = useState<MeasurementCycleMode>('5m');
 
   // 3 Measurements State (Zeroed / Ready for Technician Input)
   const [measurements, setMeasurements] = useState<SingleMeasurement[]>([
@@ -283,8 +284,8 @@ export default function App() {
 
   // Perform Full Analysis
   const analysis = useMemo(() => {
-    return performFullDiagnosticAnalysis(measurements, selectedTransformer);
-  }, [measurements, selectedTransformer]);
+    return performFullDiagnosticAnalysis(measurements, selectedTransformer, cycleMode);
+  }, [measurements, selectedTransformer, cycleMode]);
 
   // PDF Export
   const handleExportPdf = async () => {
@@ -293,6 +294,7 @@ export default function App() {
       transformer: selectedTransformer,
       measurements,
       analysis,
+      cycleMode,
       hexDataUrl: hexDataUrlRef.current,
       iticDataUrl: iticDataUrlRef.current,
       photos
@@ -397,6 +399,8 @@ export default function App() {
               measurements={measurements}
               onChangeMeasurement={handleMeasurementChange}
               selectedTransformer={selectedTransformer}
+              cycleMode={cycleMode}
+              onCycleModeChange={setCycleMode}
             />
 
             {/* Section 4: Diagnostic Analysis & PRODIST Status */}
@@ -439,20 +443,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* Section 6: Diagrama de Suportabilidade ITIC / CBEMA (Full-width Card Page) */}
+            {/* Section 6: Triagem temporal PRODIST (Full-width Card Page) */}
             <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span>
-                    7. Diagrama de Suportabilidade de Tensão (Curva ITIC / CBEMA)
+                    7. Tendência Temporal de Tensão e Corrente
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Envelope de sensibilidade para afundamentos (sags) e elevações (swells) transitórios e permanentes em equipamentos sensíveis.
+                    Cada ponto é classificado nas faixas exatas do PRODIST; incoerências de entrada são destacadas no diagnóstico.
                   </p>
                 </div>
                 <span className="self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  Norma IEEE Std 1100 / ITIC
+                  PRODIST Módulo 8
                 </span>
               </div>
 
@@ -460,6 +464,7 @@ export default function App() {
                 <IticCbemaCurve
                   measurements={measurements}
                   selectedTransformer={selectedTransformer}
+                  cycleMode={cycleMode}
                   width={880}
                   height={520}
                   theme={theme}
