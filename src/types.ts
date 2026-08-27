@@ -1,5 +1,45 @@
 export type TransformerType = 'NOVO' | 'RECONDICIONADO' | 'USADO';
 export type PhaseType = 'TRIFASICO' | 'BIFASICO' | 'MONOFASICO';
+export type MeasurementCycleMode = '5s' | '5m' | '10m';
+export type TransformerCatalogSource = 'INMETRO' | 'ETU' | 'FIELD';
+export type InmetroValidationStatus =
+  | 'COERENTE_ETU'
+  | 'COERENTE_SEM_REFERENCIA_ETU'
+  | 'ACIMA_LIMITE_ETU'
+  | 'DADOS_INCONSISTENTES'
+  | 'SEM_DADOS_DE_PERDAS';
+
+export interface InmetroTransformerModel {
+  id: string;
+  category: 'NOVO' | 'RECONDICIONADO';
+  manufacturer: string;
+  phaseType: Exclude<PhaseType, 'BIFASICO'>;
+  model?: string;
+  powerKva: number;
+  voltageClassKv: number;
+  pedestal?: boolean;
+  nominalConventionalNoLoadW?: number;
+  nominalConventionalTotalW?: number;
+  nominalReliableNoLoadW?: number;
+  nominalReliableTotalW?: number;
+  criticalConventionalNoLoadW?: number;
+  criticalConventionalTotalW?: number;
+  criticalReliableNoLoadW?: number;
+  criticalReliableTotalW?: number;
+  temperatureRise55C: boolean;
+  temperatureRise65C: boolean;
+  temperatureRise75C: boolean;
+  windingCopper: boolean;
+  windingAluminum: boolean;
+  nbiKv?: string;
+  derivedLoadLossW?: number;
+  efficiencyPercent?: number;
+  validationStatus: InmetroValidationStatus;
+  validationNote: string;
+  diagnosticReady: boolean;
+  sourceDocument: string;
+  sourcePage: number;
+}
 
 export interface TransformerSpec {
   id: string;
@@ -28,9 +68,15 @@ export interface TransformerSpec {
   tapCount?: number;
   activeTapIndex?: number;
   tapVoltages?: { [pos: number]: number };
+  /** Origem do registro. A base normativa nunca e enviada como cadastro comunitario. */
+  dataOrigin?: 'NORMATIVE' | 'COMMUNITY';
+  /** Data usada para resolver conflitos durante a sincronizacao entre dispositivos. */
+  updatedAt?: string;
 }
 
 export interface FuseRecommendation {
+  oilType?: 'MINERAL' | 'VEGETAL';
+  phaseType?: PhaseType;
   primaryVoltageV: number;
   powerKva: number;
   fuseRatingA: number; // 1 to 5 = Tipo H; 6 to 100 = Tipo K
@@ -39,6 +85,9 @@ export interface FuseRecommendation {
   fuseTypeH?: string;
   fuseTypeK?: string;
   fuseTypeT?: string;
+  sourceDocument?: string;
+  sourcePage?: number;
+  sourceTable?: string;
   notes: string;
 }
 
@@ -70,6 +119,8 @@ export interface SingleMeasurement {
   label: string;
   timestamp: string;
   isLocked: boolean;
+  /** True only after the technician explicitly records this measurement. */
+  isRecorded?: boolean;
   
   // Voltages Phase to Neutral (V)
   van: number;
@@ -106,14 +157,15 @@ export interface SingleMeasurement {
 }
 
 export interface ProdistStatus {
-  voltageStatus: 'ADEQUADA' | 'PRECARIA' | 'CRITICA';
+  voltageStatus: 'A MEDIR' | 'ADEQUADA' | 'PRECARIA' | 'CRITICA';
   voltageClassificationText: string;
   unbalanceStatus: 'ADEQUADO' | 'PRECARIO' | 'CRITICO';
   fdtpPercent: number;
 }
 
-export type IticStatus = 'ZONA_SEGURA' | 'SOBRETENSÃO_SUSTENTADA' | 'SUBTENSÃO_SUSTENTADA';
-export type IticBlockStatus = 'ALERTA_DE_VIOLAÇÃO_ITIC' | 'DENTRO_DOS_LIMITES_ITIC';
+/** Mantido com este nome por compatibilidade; representa a triagem de tensão PRODIST. */
+export type IticStatus = 'ADEQUADA' | 'PRECARIA' | 'CRITICA';
+export type IticBlockStatus = 'AGUARDANDO_MEDICOES' | 'CONFORME_PRODIST' | 'ALERTA_PRODIST';
 
 export interface IticMeasurementClassification {
   measurementId: number;
@@ -170,6 +222,31 @@ export interface DiagnosticAnalysis {
     message: string;
     severity: 'CRITICAL' | 'WARNING';
   }[];
+
+  cycleMode: MeasurementCycleMode;
+  dataQuality: {
+    status: 'VALIDO' | 'ALERTA' | 'INCONSISTENTE';
+    issues: Array<{
+      measurementId?: number;
+      code:
+        | 'TRANSFORMADOR_INCOMPLETO'
+        | 'MEDICAO_INCOMPLETA'
+        | 'MEDICOES_INSUFICIENTES'
+        | 'CRONOLOGIA'
+        | 'INTERVALO'
+        | 'RELACAO_TENSAO'
+        | 'TENSAO_PRODIST'
+        | 'FDTP'
+        | 'DESEQUILIBRIO_CORRENTE'
+        | 'CORRENTE_NEUTRO'
+        | 'CARREGAMENTO';
+      severity: 'CRITICAL' | 'WARNING';
+      title: string;
+      message: string;
+    }>;
+    canIssueTapRecommendation: boolean;
+    canIssueReport: boolean;
+  };
   
   prodist: ProdistStatus;
   iticAnalysis: IticBlockAnalysis;

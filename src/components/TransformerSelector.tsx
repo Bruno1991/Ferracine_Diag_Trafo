@@ -225,6 +225,9 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
     numPk,
     windingMaterial
   );
+  const displayedEfficiencyPercent = selectedTransformer.state === 'REFERENCIA_NORMATIVA'
+    ? selectedTransformer.efficiencyPercent
+    : calculatedLosses.efficiencyPercent;
 
   // Update active transformer spec on field changes
   const updateActiveTransformer = (updates: Partial<TransformerSpec>) => {
@@ -974,7 +977,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
           <div>
             <label className="label-xs mb-1 block text-emerald-800 dark:text-emerald-400">EFICIÊNCIA NOMINAL (%)</label>
             <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded px-2.5 py-1 text-xs font-mono font-extrabold text-emerald-800 dark:text-emerald-300">
-              {calculatedLosses.efficiencyPercent}%
+              {displayedEfficiencyPercent}%
             </div>
           </div>
         </div>
@@ -1119,4 +1122,3 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
     </div>
   );
 };
-

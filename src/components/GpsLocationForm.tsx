@@ -14,7 +14,6 @@ const CONCESSIONARIAS = [
 
 export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, onChange }) => {
   const [isLoadingGps, setIsLoadingGps] = useState(false);
-  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsSuccess, setGpsSuccess] = useState(false);
 
@@ -67,28 +66,6 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
     }
   }, []);
 
-  const fetchCityStateFromCoords = async (lat: number, lon: number): Promise<string | null> => {
-    if (!lat || !lon || isNaN(lat) || isNaN(lon)) return null;
-    try {
-      setIsFetchingAddress(true);
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-      if (res.ok) {
-        const data = await res.json();
-        const address = data.address || {};
-        const city = address.city || address.town || address.municipality || address.suburb || address.village || address.county || '';
-        const state = address.state || address['ISO3166-2-lvl4']?.split('-')[1] || '';
-        if (city || state) {
-          return [city, state].filter(Boolean).join(' / ');
-        }
-      }
-    } catch {
-      // Ignore network errors
-    } finally {
-      setIsFetchingAddress(false);
-    }
-    return null;
-  };
-
   const handleManualCoordUpdate = async (newLatStr: string, newLonStr: string) => {
     setLatInput(newLatStr);
     setLonInput(newLonStr);
@@ -102,12 +79,9 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
       setNorthingInput(String(newUtm.northing));
       setZoneInput(newUtm.zone || '');
 
-      const autoCityState = await fetchCityStateFromCoords(latNum, lonNum);
-
       onChange({
         ...initialData,
-        utm: newUtm,
-        cityState: autoCityState || initialData.cityState
+        utm: newUtm
       });
     }
   };
@@ -125,8 +99,6 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
       setLatInput(String(convertedLatLon.latitude));
       setLonInput(String(convertedLatLon.longitude));
 
-      const autoCityState = await fetchCityStateFromCoords(convertedLatLon.latitude, convertedLatLon.longitude);
-
       onChange({
         ...initialData,
         utm: {
@@ -136,8 +108,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
           hemisphere: 'S',
           latitude: convertedLatLon.latitude,
           longitude: convertedLatLon.longitude
-        },
-        cityState: autoCityState || initialData.cityState
+        }
       });
     }
   };
@@ -158,13 +129,10 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
       setLatInput(String(utm.latitude));
       setLonInput(String(utm.longitude));
 
-      const autoCityState = await fetchCityStateFromCoords(utm.latitude, utm.longitude);
-
       onChange({
         ...initialData,
         utm,
-        dateTime: currentDateTime,
-        cityState: autoCityState || initialData.cityState
+        dateTime: currentDateTime
       });
       setGpsSuccess(true);
     } catch (err: any) {
@@ -226,12 +194,6 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
             <Navigation className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
             <span>COORDENADAS GEOGRÁFICAS E LOCALIZAÇÃO UTM</span>
           </label>
-          {isFetchingAddress && (
-            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1 animate-pulse">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Buscando Cidade/Estado...
-            </span>
-          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">

@@ -1,16 +1,15 @@
-<<<<<<< HEAD
-.env
-*.pdf
-pdf_scan_summary.json
-write_report.py
-=======
 node_modules/
+.pnpm-store/
 build/
 dist/
+output/
+tmp/
 coverage/
 .DS_Store
 *.log
-.env*
-.env.example
+*.tmp
+.env
+.env.*
 !.env.example
->>>>>>> ab15fba (feat: atualizacao completa do app ferracine_diag_trafo)
+*.pdf
+pdf_scan_summary.json

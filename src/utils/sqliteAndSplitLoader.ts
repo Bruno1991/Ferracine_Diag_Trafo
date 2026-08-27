@@ -1,243 +1,533 @@
-import initSqlJs, { Database as SqlDatabase } from 'sql.js';
-import { TransformerSpec, PhaseType } from '../types';
+import initSqlJs, { Database as SqlDatabase, SqlJsStatic } from 'sql.js';
+import type {
+  FuseRecommendation,
+  InmetroTransformerModel,
+  InmetroValidationStatus,
+  PhaseType,
+  TransformerSpec,
+  TransformerType
+} from '../types';
 
-/**
- * Utilitário para carregar, unir e processar bancos de dados SQLite (.sqlite / .db)
- * e arquivos JSON divididos em partes (ex: part1, part2 ou .001, .002).
- */
+export const OFFLINE_DATABASE_FILE = 'database/ferracine-trafo.sqlite?schema=3';
+export const OFFLINE_WASM_FILE = 'vendor/sql-wasm.wasm';
 
-/**
- * Junta múltiplos Uint8Array ou ArrayBuffer em um único Uint8Array contínuo
- */
-export function combineArrayBuffers(buffers: (ArrayBuffer | Uint8Array)[]): Uint8Array {
-  const byteLengths = buffers.map((b) => (b instanceof Uint8Array ? b.byteLength : b.byteLength));
-  const totalLength = byteLengths.reduce((acc, curr) => acc + curr, 0);
-  const combined = new Uint8Array(totalLength);
+type OilType = 'MINERAL' | 'VEGETAL';
 
-  let offset = 0;
-  for (let i = 0; i < buffers.length; i++) {
-    const src = buffers[i];
-    const view = src instanceof Uint8Array ? src : new Uint8Array(src);
-    combined.set(view, offset);
-    offset += view.byteLength;
-  }
-
-  return combined;
+export interface ProdistVoltageRange {
+  system: string;
+  connection: 'FF' | 'FN';
+  nominalV: number;
+  adequateMinV: number;
+  adequateMaxV: number;
+  precariousLowMinV: number;
+  precariousHighMaxV: number;
+  criticalLowBelowV: number;
+  criticalHighAboveV: number;
+  sourcePage: number;
 }
 
-/**
- * Converte linhas de uma tabela SQLite em objetos TransformerSpec
- */
-export function mapSqliteRowsToTransformers(
-  columns: string[],
-  values: any[][]
-): TransformerSpec[] {
-  const colIndexMap: Record<string, number> = {};
-  columns.forEach((col, idx) => {
-    colIndexMap[col.toLowerCase().trim()] = idx;
-  });
+export interface OfflineDatabaseStatus {
+  loaded: boolean;
+  schemaVersion: number;
+  transformerCount: number;
+  inmetroModelCount: number;
+  fuseCount: number;
+  voltageRangeCount: number;
+  generatedAt: string;
+  source: 'BUNDLED' | 'REMOTE' | 'IMPORTED';
+}
 
-  const getVal = (row: any[], possibleNames: string[], defaultVal: any = '') => {
-    for (const name of possibleNames) {
-      if (colIndexMap[name] !== undefined) {
-        const val = row[colIndexMap[name]];
-        if (val !== null && val !== undefined) return val;
-      }
+let sqlRuntimePromise: Promise<SqlJsStatic> | null = null;
+let cachedFuses: FuseRecommendation[] = [];
+let cachedInmetroModels: InmetroTransformerModel[] = [];
+let cachedVoltageRanges: ProdistVoltageRange[] = [];
+let cachedRules = new Map<string, number>();
+let cachedStatus: OfflineDatabaseStatus = {
+  loaded: false,
+  schemaVersion: 0,
+  transformerCount: 0,
+  inmetroModelCount: 0,
+  fuseCount: 0,
+  voltageRangeCount: 0,
+  generatedAt: '',
+  source: 'BUNDLED'
+};
+
+const IDB_NAME = 'ferracine-diag-trafo';
+const IDB_STORE = 'offline-database';
+const IDB_KEY = 'active-sqlite';
+
+function openOfflineStore(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB indisponivel neste dispositivo.'));
+      return;
     }
-    return defaultVal;
-  };
+    const request = indexedDB.open(IDB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Falha ao abrir o armazenamento offline.'));
+  });
+}
 
-  return values.map((row, idx) => {
-    const rawId = getVal(row, ['id', 'codigo', 'cod', 'numero_serie', 'serial', 'tag'], `SQL-TRAFO-${idx + 1}`);
-    const brand = getVal(row, ['brand', 'fabricante', 'marca', 'mfg'], 'Geral');
-    const powerKva = parseFloat(getVal(row, ['powerkva', 'potencia_kva', 'potencia', 'kva', 'p_kva'], 45));
-    const primaryV = parseFloat(getVal(row, ['primaryvoltagev', 'tensao_primaria', 'v_primaria', 'v1', 'primaria'], 13800));
-    const secondaryV = parseFloat(getVal(row, ['secondaryvoltagev', 'tensao_secundaria', 'v_secundaria', 'v2', 'secundaria'], 220));
-    const phaseRaw = String(getVal(row, ['phasetype', 'fase', 'tipo_fase', 'fases'], 'TRIFASICO')).toUpperCase();
-    const phaseType: PhaseType = phaseRaw.includes('MONO')
-      ? 'MONO'
-      : phaseRaw.includes('BI')
-      ? 'BIFASICO'
-      : 'TRIFASICO';
+async function readPersistedDatabase(): Promise<Uint8Array | null> {
+  try {
+    const db = await openOfflineStore();
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(IDB_STORE, 'readonly');
+      const request = transaction.objectStore(IDB_STORE).get(IDB_KEY);
+      request.onsuccess = () => {
+        db.close();
+        const value = request.result;
+        if (value instanceof ArrayBuffer) resolve(new Uint8Array(value));
+        else if (value instanceof Uint8Array) resolve(value);
+        else resolve(null);
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    });
+  } catch {
+    return null;
+  }
+}
 
-    const impedance = parseFloat(getVal(row, ['impedancepercent', 'impedancia', 'z_percent', 'z', 'z_pct'], 4.5));
-    const noLoadLossesW = parseFloat(getVal(row, ['noloadlossesw', 'perdas_vazio', 'p0', 'p_0', 'perda_p0'], 150));
-    const loadLossesW = parseFloat(getVal(row, ['loadlossesw', 'perdas_carga', 'pk', 'p_k', 'perda_pk'], 750));
-    const conductor = getVal(row, ['conductormaterial', 'material_enrolamento', 'material', 'condutor'], 'ALUMINIO');
-    const category = getVal(row, ['category', 'categoria', 'situacao', 'estado', 'state'], 'RECONDICIONADO');
-    const manufacturingDate = getVal(row, ['manufacturingdate', 'data_fabricacao', 'ano_fab', 'fab_date'], '');
-    const dateAdded = getVal(row, ['dateadded', 'data_teste', 'data_ensaio', 'test_date'], new Date().toLocaleDateString('pt-BR'));
-    const standardReference = getVal(row, ['standardreference', 'norma', 'referencia'], 'NBR 5440 / NBR 10295');
-
-    return {
-      id: String(rawId),
-      powerKva: isNaN(powerKva) ? 45 : powerKva,
-      primaryVoltageV: isNaN(primaryV) ? 13800 : primaryV,
-      secondaryVoltageV: isNaN(secondaryV) ? 220 : secondaryV,
-      phaseType,
-      impedancePercent: isNaN(impedance) ? 4.5 : impedance,
-      noLoadLossesW: isNaN(noLoadLossesW) ? 150 : noLoadLossesW,
-      loadLossesW: isNaN(loadLossesW) ? 750 : loadLossesW,
-      brand: String(brand),
-      category: String(category) as any,
-      state: String(category) as any,
-      conductorMaterial: conductor.toUpperCase().includes('CU') || conductor.toUpperCase().includes('COBRE') ? 'COBRE' : 'ALUMINIO',
-      manufacturingDate: String(manufacturingDate),
-      dateAdded: String(dateAdded),
-      standardReference: String(standardReference)
+async function persistDatabase(sqliteBuffer: Uint8Array): Promise<void> {
+  const db = await openOfflineStore();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(IDB_STORE, 'readwrite');
+    transaction.objectStore(IDB_STORE).put(sqliteBuffer.slice().buffer, IDB_KEY);
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error || new Error('Falha ao persistir o banco offline.'));
     };
   });
 }
 
-/**
- * Lê um banco SQLite (Uint8Array) usando sql.js em memória e extrai os transformadores
- */
-export async function parseSqliteData(sqliteBuffer: Uint8Array): Promise<TransformerSpec[]> {
+function localAssetUrl(file: string): string {
+  const base = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
+  return `${base.endsWith('/') ? base : `${base}/`}${file}`;
+}
+
+function getSqlRuntime(): Promise<SqlJsStatic> {
+  if (!sqlRuntimePromise) {
+    sqlRuntimePromise = typeof window === 'undefined'
+      ? initSqlJs()
+      : initSqlJs({ locateFile: () => localAssetUrl(OFFLINE_WASM_FILE) });
+  }
+  return sqlRuntimePromise;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function asOptionalNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function asCategory(value: unknown): TransformerType {
+  const normalized = String(value || '').toUpperCase();
+  return normalized === 'RECONDICIONADO' || normalized === 'USADO' ? normalized : 'NOVO';
+}
+
+function asPhaseType(value: unknown): PhaseType {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized.includes('MONO')) return 'MONOFASICO';
+  if (normalized.includes('BI')) return 'BIFASICO';
+  return 'TRIFASICO';
+}
+
+function parseTapVoltages(value: unknown): Record<number, number> | undefined {
+  if (!value) return undefined;
   try {
-    const SQL = await initSqlJs({
-      // Carrega o arquivo WASM da CDN oficial do sql.js para runtime no navegador
-      locateFile: (file) => `https://sql.js.org/dist/${file}`
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const taps: Record<number, number> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([key, tapVoltage]) => {
+      const index = Number(key);
+      const voltage = Number(tapVoltage);
+      if (Number.isInteger(index) && Number.isFinite(voltage)) taps[index] = voltage;
     });
+    return Object.keys(taps).length > 0 ? taps : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-    const db: SqlDatabase = new SQL.Database(sqliteBuffer);
+function rowsAsObjects(db: SqlDatabase, query: string): Record<string, unknown>[] {
+  const result = db.exec(query);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map((row) => Object.fromEntries(columns.map((column, index) => [column, row[index]])));
+}
 
-    // Descobre as tabelas existentes no banco SQLite
-    const tablesResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
-    if (!tablesResult || tablesResult.length === 0 || !tablesResult[0].values) {
-      db.close();
-      return [];
+function mapTransformer(row: Record<string, unknown>): TransformerSpec {
+  return {
+    id: String(row.id || ''),
+    category: asCategory(row.category),
+    state: row.state ? String(row.state) : undefined,
+    phaseType: asPhaseType(row.phaseType),
+    powerKva: asNumber(row.powerKva),
+    primaryVoltageV: asNumber(row.primaryVoltageV),
+    secondaryVoltageV: asNumber(row.secondaryVoltageV),
+    secondaryNeutralV: asNumber(row.secondaryNeutralV),
+    impedancePercent: asNumber(row.impedancePercent),
+    windingMaterial: String(row.windingMaterial || 'ALUMINIO').toUpperCase().includes('COBRE') ? 'COBRE' : 'ALUMINIO',
+    oilType: String(row.oilType || 'MINERAL').toUpperCase().includes('VEGETAL') ? 'VEGETAL' : 'MINERAL',
+    efficiencyLevel: row.efficiencyLevel ? String(row.efficiencyLevel) : undefined,
+    noLoadLossW: asNumber(row.noLoadLossW),
+    loadLoss75cW: asNumber(row.loadLoss75cW),
+    totalLossW: asNumber(row.totalLossW),
+    efficiencyPercent: asNumber(row.efficiencyPercent),
+    noLoadCurrentPercent: row.noLoadCurrentPercent == null ? undefined : asNumber(row.noLoadCurrentPercent),
+    standardReference: String(row.standardReference || ''),
+    dateAdded: String(row.dateAdded || ''),
+    tapCount: row.tapCount == null ? undefined : asNumber(row.tapCount),
+    activeTapIndex: row.activeTapIndex == null ? undefined : asNumber(row.activeTapIndex),
+    tapVoltages: parseTapVoltages(row.tapVoltages),
+    dataOrigin: 'NORMATIVE'
+  };
+}
+
+function mapInmetroModel(row: Record<string, unknown>): InmetroTransformerModel {
+  return {
+    id: String(row.id || ''),
+    category: String(row.category) === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'NOVO',
+    manufacturer: String(row.manufacturer || 'FABRICANTE NÃO IDENTIFICADO'),
+    phaseType: asPhaseType(row.phaseType) === 'MONOFASICO' ? 'MONOFASICO' : 'TRIFASICO',
+    model: row.model ? String(row.model) : undefined,
+    powerKva: asNumber(row.powerKva),
+    voltageClassKv: asNumber(row.voltageClassKv),
+    pedestal: row.pedestal == null ? undefined : Boolean(asNumber(row.pedestal)),
+    nominalConventionalNoLoadW: asOptionalNumber(row.nominalConventionalNoLoadW),
+    nominalConventionalTotalW: asOptionalNumber(row.nominalConventionalTotalW),
+    nominalReliableNoLoadW: asOptionalNumber(row.nominalReliableNoLoadW),
+    nominalReliableTotalW: asOptionalNumber(row.nominalReliableTotalW),
+    criticalConventionalNoLoadW: asOptionalNumber(row.criticalConventionalNoLoadW),
+    criticalConventionalTotalW: asOptionalNumber(row.criticalConventionalTotalW),
+    criticalReliableNoLoadW: asOptionalNumber(row.criticalReliableNoLoadW),
+    criticalReliableTotalW: asOptionalNumber(row.criticalReliableTotalW),
+    temperatureRise55C: Boolean(asNumber(row.temperatureRise55C)),
+    temperatureRise65C: Boolean(asNumber(row.temperatureRise65C)),
+    temperatureRise75C: Boolean(asNumber(row.temperatureRise75C)),
+    windingCopper: Boolean(asNumber(row.windingCopper)),
+    windingAluminum: Boolean(asNumber(row.windingAluminum)),
+    nbiKv: row.nbiKv ? String(row.nbiKv) : undefined,
+    derivedLoadLossW: asOptionalNumber(row.derivedLoadLossW),
+    efficiencyPercent: asOptionalNumber(row.efficiencyPercent),
+    validationStatus: String(row.validationStatus) as InmetroValidationStatus,
+    validationNote: String(row.validationNote || ''),
+    diagnosticReady: Boolean(asNumber(row.diagnosticReady)),
+    sourceDocument: String(row.sourceDocument || ''),
+    sourcePage: asNumber(row.sourcePage)
+  };
+}
+
+function readAuxiliaryData(db: SqlDatabase): {
+  fuses: FuseRecommendation[];
+  voltageRanges: ProdistVoltageRange[];
+  rules: Map<string, number>;
+} {
+  const fuses = rowsAsObjects(
+    db,
+    'SELECT oilType, phaseType, powerKva, primaryVoltageV, fuseRatingA, fuseType, fuseCode, sourceDocument, sourcePage, sourceTable FROM fuse_recommendations'
+  ).map((row) => ({
+    oilType: String(row.oilType) as OilType,
+    phaseType: asPhaseType(row.phaseType),
+    powerKva: asNumber(row.powerKva),
+    primaryVoltageV: asNumber(row.primaryVoltageV),
+    fuseRatingA: asNumber(row.fuseRatingA),
+    fuseType: String(row.fuseType) as 'H' | 'K',
+    fuseCode: String(row.fuseCode),
+    sourceDocument: String(row.sourceDocument),
+    sourcePage: asNumber(row.sourcePage),
+    sourceTable: String(row.sourceTable),
+    notes: `${String(row.sourceDocument)}, ${String(row.sourceTable)}, página ${asNumber(row.sourcePage)}`
+  }));
+
+  const voltageRanges = rowsAsObjects(
+    db,
+    'SELECT system, connection, nominalV, adequateMinV, adequateMaxV, precariousLowMinV, precariousHighMaxV, criticalLowBelowV, criticalHighAboveV, sourcePage FROM prodist_voltage_ranges'
+  ).map((row) => ({
+    system: String(row.system),
+    connection: String(row.connection) as 'FF' | 'FN',
+    nominalV: asNumber(row.nominalV),
+    adequateMinV: asNumber(row.adequateMinV),
+    adequateMaxV: asNumber(row.adequateMaxV),
+    precariousLowMinV: asNumber(row.precariousLowMinV),
+    precariousHighMaxV: asNumber(row.precariousHighMaxV),
+    criticalLowBelowV: asNumber(row.criticalLowBelowV),
+    criticalHighAboveV: asNumber(row.criticalHighAboveV),
+    sourcePage: asNumber(row.sourcePage)
+  }));
+
+  const rules = new Map(
+    rowsAsObjects(db, 'SELECT key, value FROM diagnostic_rules').map((row) => [String(row.key), asNumber(row.value)])
+  );
+  return { fuses, voltageRanges, rules };
+}
+
+const SUPPORTED_SCHEMA_VERSION = 3;
+const REQUIRED_RULES = [
+  'prodist_fd_limit_bt_percent',
+  'current_unbalance_limit_percent'
+];
+
+function validateDatabaseContent(
+  metadata: Map<string, string>,
+  transformers: TransformerSpec[],
+  inmetroModels: InmetroTransformerModel[],
+  fuses: FuseRecommendation[],
+  voltageRanges: ProdistVoltageRange[],
+  rules: Map<string, number>
+): void {
+  if (metadata.get('database_id') !== 'ferracine-trafo-db') {
+    throw new Error('Banco SQLite rejeitado: identificador oficial ausente ou invalido.');
+  }
+  const generatedAt = metadata.get('generated_at') || '';
+  if (!Number.isFinite(Date.parse(generatedAt))) {
+    throw new Error('Banco SQLite rejeitado: data de geracao invalida.');
+  }
+  if (transformers.length === 0 || inmetroModels.length === 0 || fuses.length === 0 || voltageRanges.length === 0 || rules.size === 0) {
+    throw new Error('Banco SQLite rejeitado: conteudo minimo obrigatorio ausente.');
+  }
+  const transformerIds = new Set(transformers.map((item) => item.id));
+  const inmetroIds = new Set(inmetroModels.map((item) => item.id));
+  if (transformerIds.size !== transformers.length || transformerIds.has('')) {
+    throw new Error('Banco SQLite rejeitado: IDs de transformadores vazios ou duplicados.');
+  }
+  if (inmetroIds.size !== inmetroModels.length || inmetroIds.has('')) {
+    throw new Error('Banco SQLite rejeitado: IDs INMETRO vazios ou duplicados.');
+  }
+  if (transformers.some((item) => item.powerKva <= 0 || item.primaryVoltageV <= 0 || item.secondaryVoltageV <= 0 || item.impedancePercent <= 0)) {
+    throw new Error('Banco SQLite rejeitado: perfil ETU com grandeza nominal invalida.');
+  }
+  if (fuses.some((item) => item.powerKva <= 0 || item.primaryVoltageV <= 0 || item.fuseRatingA <= 0 || !item.fuseCode)) {
+    throw new Error('Banco SQLite rejeitado: matriz de elos contem valores invalidos.');
+  }
+  if (voltageRanges.some((range) =>
+    range.nominalV <= 0 ||
+    range.criticalLowBelowV >= range.adequateMinV ||
+    range.adequateMinV > range.adequateMaxV ||
+    range.criticalHighAboveV <= range.adequateMaxV
+  )) {
+    throw new Error('Banco SQLite rejeitado: faixas PRODIST incoerentes.');
+  }
+  for (const key of REQUIRED_RULES) {
+    if (!Number.isFinite(rules.get(key))) throw new Error(`Banco SQLite rejeitado: regra obrigatoria ${key} ausente.`);
+  }
+  const declaredInmetroCount = Number(metadata.get('inmetro_model_count'));
+  if (Number.isFinite(declaredInmetroCount) && declaredInmetroCount !== inmetroModels.length) {
+    throw new Error('Banco SQLite rejeitado: contagem INMETRO diverge do metadata.');
+  }
+}
+
+export async function parseSqliteData(
+  sqliteBuffer: Uint8Array,
+  source: OfflineDatabaseStatus['source'] = 'IMPORTED'
+): Promise<TransformerSpec[]> {
+  const SQL = await getSqlRuntime();
+  const db = new SQL.Database(sqliteBuffer);
+  try {
+    const tables = new Set(
+      rowsAsObjects(db, "SELECT name FROM sqlite_master WHERE type='table'").map((row) => String(row.name))
+    );
+    for (const required of ['database_metadata', 'transformers', 'inmetro_models', 'fuse_recommendations', 'prodist_voltage_ranges', 'diagnostic_rules']) {
+      if (!tables.has(required)) throw new Error(`Banco SQLite incompatível: tabela ${required} ausente.`);
     }
 
-    const tableNames = tablesResult[0].values.map((v) => String(v[0]));
-    let allTransformers: TransformerSpec[] = [];
-
-    for (const tableName of tableNames) {
-      const queryResult = db.exec(`SELECT * FROM "${tableName}";`);
-      if (queryResult && queryResult.length > 0) {
-        const columns = queryResult[0].columns;
-        const values = queryResult[0].values;
-        const trafos = mapSqliteRowsToTransformers(columns, values);
-        allTransformers = [...allTransformers, ...trafos];
-      }
+    const metadata = new Map(
+      rowsAsObjects(db, 'SELECT key, value FROM database_metadata').map((row) => [String(row.key), String(row.value)])
+    );
+    const schemaVersion = asNumber(metadata.get('schema_version'));
+    if (schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+      throw new Error(`Versao de banco nao suportada: ${schemaVersion}. Esperada: ${SUPPORTED_SCHEMA_VERSION}.`);
     }
 
+    const transformers = rowsAsObjects(db, 'SELECT * FROM transformers ORDER BY oilType, phaseType, voltageClassKv, powerKva').map(mapTransformer);
+    const inmetroModels = rowsAsObjects(
+      db,
+      'SELECT * FROM inmetro_models ORDER BY category, manufacturer, phaseType, voltageClassKv, powerKva, model'
+    ).map(mapInmetroModel);
+    const { fuses, voltageRanges, rules } = readAuxiliaryData(db);
+    validateDatabaseContent(metadata, transformers, inmetroModels, fuses, voltageRanges, rules);
+
+    cachedInmetroModels = inmetroModels;
+    cachedFuses = fuses;
+    cachedVoltageRanges = voltageRanges;
+    cachedRules = rules;
+    cachedStatus = {
+      loaded: true,
+      schemaVersion,
+      transformerCount: transformers.length,
+      inmetroModelCount: inmetroModels.length,
+      fuseCount: fuses.length,
+      voltageRangeCount: voltageRanges.length,
+      generatedAt: metadata.get('generated_at') || '',
+      source
+    };
+    return transformers;
+  } finally {
     db.close();
-    return allTransformers;
-  } catch (err) {
-    console.error('Erro ao processar banco SQLite com sql.js:', err);
-    throw err;
   }
 }
 
-/**
- * Une e interpreta múltiplos arquivos selecionados pelo usuário (partes de JSON ou SQLite)
- */
-export async function processSplitFiles(files: File[]): Promise<TransformerSpec[]> {
-  if (!files || files.length === 0) return [];
-
-  // Ordena os arquivos pelo nome (ex: part1, part2, .001, .002)
-  const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-
-  const firstFile = sortedFiles[0];
-  const isSqlite = sortedFiles.some((f) => f.name.toLowerCase().endsWith('.sqlite') || f.name.toLowerCase().endsWith('.db')) ||
-                   firstFile.name.toLowerCase().includes('sqlite') ||
-                   firstFile.name.toLowerCase().includes('.db');
-
-  if (isSqlite) {
-    // Carrega buffers de todas as partes e combina
-    const buffers: Uint8Array[] = [];
-    for (const file of sortedFiles) {
-      const arrayBuffer = await file.arrayBuffer();
-      buffers.push(new Uint8Array(arrayBuffer));
-    }
-    const combinedBuffer = combineArrayBuffers(buffers);
-    return await parseSqliteData(combinedBuffer);
-  } else {
-    // Tenta ler como partes JSON ou texto concatenado
-    let combinedText = '';
-    const jsonItems: TransformerSpec[] = [];
-
-    for (const file of sortedFiles) {
-      const text = await file.text();
-      try {
-        // Se o arquivo individual for um JSON completo válido (array de itens)
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) {
-          jsonItems.push(...parsed);
-        } else if (parsed && typeof parsed === 'object') {
-          if (Array.isArray(parsed.transformers)) {
-            jsonItems.push(...parsed.transformers);
-          } else if (Array.isArray(parsed.data)) {
-            jsonItems.push(...parsed.data);
-          }
-        }
-      } catch {
-        // Se não for JSON válido individual, concatena o texto bruto
-        combinedText += text;
-      }
-    }
-
-    if (jsonItems.length > 0) {
-      return jsonItems;
-    }
-
-    if (combinedText.trim()) {
-      try {
-        const parsedCombined = JSON.parse(combinedText);
-        if (Array.isArray(parsedCombined)) return parsedCombined;
-        if (parsedCombined.transformers && Array.isArray(parsedCombined.transformers)) return parsedCombined.transformers;
-        if (parsedCombined.data && Array.isArray(parsedCombined.data)) return parsedCombined.data;
-      } catch (e) {
-        console.error('Erro ao decodificar JSON unificado:', e);
-      }
-    }
-  }
-
-  return [];
-}
-
-/**
- * Tenta buscar automaticamente partes de arquivos no diretório estático /database/
- */
-export async function fetchLocalDatabaseFolderFiles(): Promise<TransformerSpec[]> {
-  const possiblePaths = [
-    '/database/base-db.sqlite',
-    '/database/base-db-part1.json',
-    '/database/base-db-part2.json',
-    '/database/transformador-db.json',
-    '/database/transformador-db-part1.json',
-    '/database/transformador-db-part2.json',
-    '/database/transformador-db.part1.json',
-    '/database/transformador-db.part2.json',
-    '/database/base-db.part1.sqlite',
-    '/database/base-db.part2.sqlite',
-    '/database/base-db.sqlite.001',
-    '/database/base-db.sqlite.002'
-  ];
-
-  let collectedTrafos: TransformerSpec[] = [];
-
-  for (const path of possiblePaths) {
+export async function loadBundledOfflineDatabase(): Promise<TransformerSpec[]> {
+  const persisted = await readPersistedDatabase();
+  let persistedStatus: OfflineDatabaseStatus | null = null;
+  if (persisted) {
     try {
-      const res = await fetch(path);
-      if (res.ok) {
-        if (path.endsWith('.sqlite') || path.endsWith('.db')) {
-          const buffer = new Uint8Array(await res.arrayBuffer());
-          const trafos = await parseSqliteData(buffer);
-          if (trafos.length > 0) collectedTrafos.push(...trafos);
-        } else if (path.endsWith('.json')) {
-          const json = await res.json();
-          if (Array.isArray(json)) {
-            collectedTrafos.push(...json);
-          } else if (json && Array.isArray(json.transformers)) {
-            collectedTrafos.push(...json.transformers);
-          }
-        }
-      }
-    } catch {
-      // Ignora rotas não encontradas
+      await parseSqliteData(persisted, 'REMOTE');
+      persistedStatus = { ...cachedStatus };
+    } catch (error) {
+      console.warn('Banco remoto persistido invalido; ignorando a copia persistida.', error);
     }
   }
 
-  return collectedTrafos;
+  let bundledBytes: Uint8Array | null = null;
+  try {
+    const response = await fetch(localAssetUrl(OFFLINE_DATABASE_FILE), { cache: 'no-cache' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    bundledBytes = new Uint8Array(await response.arrayBuffer());
+  } catch (error) {
+    if (persisted && persistedStatus) return parseSqliteData(persisted, 'REMOTE');
+    throw new Error(`Banco offline indisponivel: ${error instanceof Error ? error.message : 'falha de leitura'}.`);
+  }
+
+  const bundledTransformers = await parseSqliteData(bundledBytes, 'BUNDLED');
+  const bundledStatus = { ...cachedStatus };
+  if (persisted && persistedStatus) {
+    const persistedDate = Date.parse(persistedStatus.generatedAt);
+    const bundledDate = Date.parse(bundledStatus.generatedAt);
+    const persistedIsCurrent =
+      persistedStatus.schemaVersion === bundledStatus.schemaVersion &&
+      Number.isFinite(persistedDate) &&
+      Number.isFinite(bundledDate) &&
+      persistedDate >= bundledDate;
+    if (persistedIsCurrent) return parseSqliteData(persisted, 'REMOTE');
+  }
+  return bundledTransformers;
+}
+
+async function restoreInstalledDatabaseState(): Promise<void> {
+  const persisted = await readPersistedDatabase();
+  if (persisted) {
+    await parseSqliteData(persisted, 'REMOTE');
+    return;
+  }
+  const response = await fetch(localAssetUrl(OFFLINE_DATABASE_FILE));
+  if (!response.ok) throw new Error('Nao foi possivel restaurar o banco offline instalado.');
+  await parseSqliteData(new Uint8Array(await response.arrayBuffer()), 'BUNDLED');
+}
+
+/** Valida e instala uma atualizacao oficial. A gravacao ocorre somente apos a validacao completa. */
+export async function installRemoteOfflineDatabase(sqliteBuffer: Uint8Array): Promise<TransformerSpec[]> {
+  const previousStatus = { ...cachedStatus };
+  const transformers = await parseSqliteData(sqliteBuffer, 'REMOTE');
+  const candidateStatus = { ...cachedStatus };
+
+  if (previousStatus.loaded && candidateStatus.schemaVersion < previousStatus.schemaVersion) {
+    await restoreInstalledDatabaseState();
+    throw new Error(
+      `Atualizacao recusada: esquema remoto ${candidateStatus.schemaVersion} e inferior ao local ${previousStatus.schemaVersion}.`
+    );
+  }
+
+  const candidateDate = Date.parse(candidateStatus.generatedAt);
+  const currentDate = Date.parse(previousStatus.generatedAt);
+  if (
+    previousStatus.loaded &&
+    candidateStatus.schemaVersion === previousStatus.schemaVersion &&
+    Number.isFinite(candidateDate) &&
+    Number.isFinite(currentDate) &&
+    candidateDate < currentDate
+  ) {
+    await restoreInstalledDatabaseState();
+    throw new Error('Atualizacao recusada: o banco remoto e mais antigo que o banco instalado.');
+  }
+
+  try {
+    await persistDatabase(sqliteBuffer);
+  } catch (error) {
+    await restoreInstalledDatabaseState();
+    throw error;
+  }
+  return transformers;
+}
+
+export async function processDatabaseFile(file: File): Promise<TransformerSpec[]> {
+  const lowerName = file.name.toLowerCase();
+  if (!lowerName.endsWith('.sqlite') && !lowerName.endsWith('.db')) {
+    throw new Error('Selecione um único arquivo SQLite (.sqlite ou .db).');
+  }
+  return parseSqliteData(new Uint8Array(await file.arrayBuffer()), 'IMPORTED');
+}
+
+export function getOfflineDatabaseStatus(): OfflineDatabaseStatus {
+  return { ...cachedStatus };
+}
+
+/** Modelos PBE/INMETRO sem o número de etiqueta, que não é necessário ao diagnóstico. */
+export function getOfflineInmetroModels(): InmetroTransformerModel[] {
+  return cachedInmetroModels.map((item) => ({ ...item }));
+}
+
+/** Cópia somente-leitura da Tabela 16 carregada do SQLite ativo. */
+export function getOfflineFuseRecommendations(): FuseRecommendation[] {
+  return cachedFuses.map((item) => ({ ...item }));
+}
+
+/** Faixas nominais exatas do PRODIST carregadas do SQLite ativo. */
+export function getOfflineProdistVoltageRanges(): ProdistVoltageRange[] {
+  return cachedVoltageRanges.map((item) => ({ ...item }));
+}
+
+export function getDiagnosticRuleValue(key: string, fallback: number): number {
+  return cachedRules.get(key) ?? fallback;
+}
+
+export function classifyProdistVoltage(
+  measuredVoltageV: number,
+  nominalVoltageV: number,
+  connection: 'FF' | 'FN' = 'FF'
+): { status: 'ADEQUADA' | 'PRECARIA' | 'CRITICA'; range: ProdistVoltageRange } | null {
+  const range = cachedVoltageRanges.find(
+    (candidate) => candidate.connection === connection && Math.abs(candidate.nominalV - nominalVoltageV) < 0.01
+  );
+  if (!range || measuredVoltageV <= 0) return null;
+  if (measuredVoltageV >= range.adequateMinV && measuredVoltageV <= range.adequateMaxV) {
+    return { status: 'ADEQUADA', range };
+  }
+  if (measuredVoltageV >= range.precariousLowMinV && measuredVoltageV <= range.precariousHighMaxV) {
+    return { status: 'PRECARIA', range };
+  }
+  return { status: 'CRITICA', range };
+}
+
+export function findFuseInOfflineDatabase(
+  primaryVoltageV: number,
+  powerKva: number,
+  phaseType: PhaseType,
+  oilType: OilType
+): FuseRecommendation | null {
+  const candidates = cachedFuses
+    .filter((item) => item.phaseType === phaseType && item.oilType === oilType && Math.abs(item.powerKva - powerKva) < 0.001)
+    .sort((a, b) => Math.abs(a.primaryVoltageV - primaryVoltageV) - Math.abs(b.primaryVoltageV - primaryVoltageV));
+  const selected = candidates[0];
+  if (!selected) return null;
+  const relativeDistance = Math.abs(selected.primaryVoltageV - primaryVoltageV) / selected.primaryVoltageV;
+  if (relativeDistance > 0.25) return null;
+  return { ...selected };
 }

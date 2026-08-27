@@ -1,21 +1,21 @@
 {
-  "name": "react-example",
+  "name": "ferracine-diag-trafo",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "test": "pnpm run test:diagnostic",
+    "test:diagnostic": "tsx scripts/verify-diagnostic.ts",
+    "check": "pnpm run lint && pnpm run test",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.546.0",
@@ -24,7 +24,6 @@
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
     "sql.js": "^1.14.1",
-    "vite": "^6.2.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -37,5 +36,9 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
-  }
+  },
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "packageManager": "pnpm@11.9.0"
 }

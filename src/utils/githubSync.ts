@@ -1,187 +1,292 @@
-import { TransformerSpec } from '../types';
-import { fetchLocalDatabaseFolderFiles } from './sqliteAndSplitLoader';
+import type { TransformerSpec } from '../types';
+import {
+  getOfflineDatabaseStatus,
+  installRemoteOfflineDatabase,
+  type OfflineDatabaseStatus
+} from './sqliteAndSplitLoader';
+
+const GITHUB_API = 'https://api.github.com';
+const GITHUB_API_VERSION = '2026-03-10';
 
 export interface GitHubSyncConfig {
   token: string;
   owner: string;
   repo: string;
   branch: string;
-  filePath: string;
+  transformerPath: string;
+  databasePath: string;
 }
 
-/**
- * Configuração Fixa do Repositório da Equipe (ferracine_diag_trafo)
- */
-export const FIXED_TEAM_GITHUB_CONFIG: GitHubSyncConfig = {
-  token: atob('Z2hwX2dWQkU4cG1HdVVVMHduRkY0ZU5UTDNJMFM4ZTZHM3ZhTlph'),
-  owner: 'Bruno1991',
-  repo: 'Ferracine_Diag_Trafo',
-  branch: 'main',
-  filePath: 'database/transformador-db.json'
-};
-
-/**
- * Recupera as configurações salvas no localStorage ou retorna as padrões da equipe
- */
-export function getSavedGitHubConfig(): GitHubSyncConfig {
-  try {
-    const saved = localStorage.getItem('tx_github_sync_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        token: parsed.token || FIXED_TEAM_GITHUB_CONFIG.token,
-        owner: parsed.owner || FIXED_TEAM_GITHUB_CONFIG.owner,
-        repo: parsed.repo || FIXED_TEAM_GITHUB_CONFIG.repo,
-        branch: parsed.branch || FIXED_TEAM_GITHUB_CONFIG.branch,
-        filePath: parsed.filePath || FIXED_TEAM_GITHUB_CONFIG.filePath
-      };
-    }
-  } catch (e) {
-    console.error('Erro ao ler configuracao do github', e);
-  }
-  return FIXED_TEAM_GITHUB_CONFIG;
+export interface GitHubSyncResult {
+  communityTransformers: TransformerSpec[];
+  normativeTransformers: TransformerSpec[] | null;
+  databaseStatus: OfflineDatabaseStatus;
+  uploadedCount: number;
+  downloadedCount: number;
+  databaseUpdated: boolean;
+  warnings: string[];
 }
 
-/**
- * Salva a configuração no localStorage
- */
-export function saveGitHubConfig(config: GitHubSyncConfig): void {
-  try {
-    localStorage.setItem('tx_github_sync_config', JSON.stringify(config));
-  } catch (e) {
-    console.error('Erro ao salvar configuracao do github', e);
+interface GitHubContentMetadata {
+  sha?: string;
+  content?: string;
+  encoding?: string;
+}
+
+class GitHubRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
   }
 }
 
-// Helpers UTF-8 safe base64
-export function encodeUtf8ToBase64(str: string): string {
-  const bytes = new TextEncoder().encode(str);
+function normalizedConfig(config: GitHubSyncConfig): GitHubSyncConfig {
+  return {
+    token: config.token.trim(),
+    owner: config.owner.trim(),
+    repo: config.repo.trim(),
+    branch: config.branch.trim() || 'main',
+    transformerPath: config.transformerPath.trim() || 'database/transformador-db.json',
+    databasePath: config.databasePath.trim() || 'public/database/ferracine-trafo.sqlite'
+  };
+}
+
+function encodedPath(path: string): string {
+  return path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+}
+
+function contentUrl(config: GitHubSyncConfig, path: string, includeRef = true): string {
+  const base = `${GITHUB_API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${encodedPath(path)}`;
+  return includeRef ? `${base}?ref=${encodeURIComponent(config.branch)}` : base;
+}
+
+function githubHeaders(config: GitHubSyncConfig, accept = 'application/vnd.github+json'): HeadersInit {
+  return {
+    Accept: accept,
+    Authorization: `Bearer ${config.token}`,
+    'X-GitHub-Api-Version': GITHUB_API_VERSION
+  };
+}
+
+async function githubError(response: Response, fallback: string): Promise<GitHubRequestError> {
+  const payload = await response.json().catch(() => ({})) as { message?: string };
+  return new GitHubRequestError(payload.message || fallback, response.status);
+}
+
+function decodeBase64Bytes(content: string): Uint8Array {
+  const binary = atob(content.replace(/\s/g, ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function encodeBytesBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
 }
 
-export function decodeBase64ToUtf8(base64Str: string): string {
-  const cleanBase64 = base64Str.replace(/\s/g, '');
-  const binary = atob(cleanBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new TextDecoder().decode(bytes);
+function encodeTextBase64(text: string): string {
+  return encodeBytesBase64(new TextEncoder().encode(text));
 }
 
-/**
- * Busca o arquivo JSON remoto do GitHub
- */
-export async function fetchRemoteTransformers(
-  config: GitHubSyncConfig = getSavedGitHubConfig()
+async function getMetadata(config: GitHubSyncConfig, path: string): Promise<GitHubContentMetadata | null> {
+  const response = await fetch(contentUrl(config, path), { headers: githubHeaders(config) });
+  if (response.status === 404) return null;
+  if (!response.ok) throw await githubError(response, `Falha ao consultar ${path} no GitHub.`);
+  return await response.json() as GitHubContentMetadata;
+}
+
+async function getRawBytes(config: GitHubSyncConfig, path: string): Promise<Uint8Array> {
+  const response = await fetch(contentUrl(config, path), {
+    headers: githubHeaders(config, 'application/vnd.github.raw+json')
+  });
+  if (!response.ok) throw await githubError(response, `Falha ao baixar ${path} do GitHub.`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function readCommunityFile(
+  config: GitHubSyncConfig
 ): Promise<{ sha: string | null; transformers: TransformerSpec[] }> {
-  const owner = config.owner.trim();
-  const repo = config.repo.trim();
-  const branch = config.branch.trim() || 'main';
-  const path = config.filePath.trim() || 'database/transformador-db.json';
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+  const metadata = await getMetadata(config, config.transformerPath);
+  if (!metadata) return { sha: null, transformers: [] };
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${config.token.trim()}`,
-      Accept: 'application/vnd.github.v3+json'
-    }
-  });
+  const bytes = metadata.content && metadata.encoding === 'base64'
+    ? decodeBase64Bytes(metadata.content)
+    : await getRawBytes(config, config.transformerPath);
+  const parsed = JSON.parse(new TextDecoder().decode(bytes));
+  if (!Array.isArray(parsed)) throw new Error('O arquivo colaborativo remoto nao contem uma lista valida.');
 
-  if (!res.ok) {
-    if (res.status === 404) {
-      const localFallback = await fetchLocalDatabaseFolderFiles();
-      return { sha: null, transformers: localFallback };
-    }
-    const errorJson = await res.json().catch(() => ({}));
-    const localFallback = await fetchLocalDatabaseFolderFiles();
-    if (localFallback.length > 0) {
-      return { sha: null, transformers: localFallback };
-    }
-    throw new Error(errorJson.message || `Erro no GitHub (Status ${res.status})`);
-  }
-
-  const remoteData = await res.json();
-  const sha = remoteData.sha || null;
-  let remoteTransformers: TransformerSpec[] = [];
-
-  if (remoteData.content) {
-    try {
-      const decodedJson = decodeBase64ToUtf8(remoteData.content);
-      const parsed = JSON.parse(decodedJson);
-      if (Array.isArray(parsed)) {
-        remoteTransformers = parsed.map((t: any) => ({
-          ...t,
-          category: t.category || t.state || 'NOVO',
-          state: t.state || t.category || 'NOVO'
-        }));
-      }
-    } catch (e) {
-      console.warn('Erro ao decodificar JSON remoto do GitHub:', e);
-    }
-  }
-
-  if (remoteTransformers.length === 0) {
-    const localTrafos = await fetchLocalDatabaseFolderFiles();
-    if (localTrafos.length > 0) {
-      remoteTransformers = localTrafos;
-    }
-  }
-
-  return { sha, transformers: remoteTransformers };
+  return {
+    sha: metadata.sha || null,
+    transformers: parsed.map(normalizeCommunityTransformer).filter((item): item is TransformerSpec => item !== null)
+  };
 }
 
-/**
- * Envia/Atualiza o banco de transformadores no GitHub (PUT)
- */
-export async function pushTransformersToRemote(
-  transformers: TransformerSpec[],
-  sha: string | null = null,
-  config: GitHubSyncConfig = getSavedGitHubConfig()
-): Promise<void> {
-  const owner = config.owner.trim();
-  const repo = config.repo.trim();
-  const branch = config.branch.trim() || 'main';
-  const path = config.filePath.trim() || 'database/transformador-db.json';
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+function finiteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-  const repoTransformers = transformers.map((t) => {
-    const { category, ...rest } = t;
-    return {
-      ...rest,
-      state: t.state || t.category || 'NOVO'
-    };
-  });
+function normalizeCommunityTransformer(value: unknown): TransformerSpec | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Partial<TransformerSpec>;
+  if (!item.id || typeof item.id !== 'string') return null;
+  if (item.dataOrigin === 'NORMATIVE' || item.state === 'REFERENCIA_NORMATIVA') return null;
 
-  const jsonContent = JSON.stringify(repoTransformers, null, 2);
-  const base64Content = encodeUtf8ToBase64(jsonContent);
-
-  const body: any = {
-    message: `sync: atualização de transformadores por equipe em ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`,
-    content: base64Content,
-    branch: branch
-  };
-
-  if (sha) {
-    body.sha = sha;
+  const powerKva = finiteNumber(item.powerKva);
+  const primaryVoltageV = finiteNumber(item.primaryVoltageV);
+  const secondaryVoltageV = finiteNumber(item.secondaryVoltageV);
+  const secondaryNeutralV = finiteNumber(item.secondaryNeutralV);
+  const impedancePercent = finiteNumber(item.impedancePercent);
+  const noLoadLossW = finiteNumber(item.noLoadLossW);
+  const loadLoss75cW = finiteNumber(item.loadLoss75cW);
+  const totalLossW = finiteNumber(item.totalLossW);
+  const efficiencyPercent = finiteNumber(item.efficiencyPercent);
+  if ([powerKva, primaryVoltageV, secondaryVoltageV, secondaryNeutralV, impedancePercent, noLoadLossW, loadLoss75cW, totalLossW, efficiencyPercent].some((number) => number === null)) {
+    return null;
   }
 
-  const putRes = await fetch(url, {
+  const category = item.category === 'RECONDICIONADO' || item.category === 'USADO' ? item.category : 'NOVO';
+  const phaseType = item.phaseType === 'MONOFASICO' || item.phaseType === 'BIFASICO' ? item.phaseType : 'TRIFASICO';
+  return {
+    ...item,
+    id: item.id.trim().slice(0, 160),
+    category,
+    state: item.state || category,
+    phaseType,
+    powerKva: powerKva!,
+    primaryVoltageV: primaryVoltageV!,
+    secondaryVoltageV: secondaryVoltageV!,
+    secondaryNeutralV: secondaryNeutralV!,
+    impedancePercent: impedancePercent!,
+    noLoadLossW: noLoadLossW!,
+    loadLoss75cW: loadLoss75cW!,
+    totalLossW: totalLossW!,
+    efficiencyPercent: efficiencyPercent!,
+    standardReference: String(item.standardReference || 'Placa cadastrada em campo'),
+    dateAdded: String(item.dateAdded || new Date().toISOString().slice(0, 10)),
+    dataOrigin: 'COMMUNITY',
+    updatedAt: item.updatedAt || new Date(0).toISOString()
+  };
+}
+
+export function isCommunityTransformer(transformer: TransformerSpec): boolean {
+  if (transformer.dataOrigin === 'NORMATIVE' || transformer.state === 'REFERENCIA_NORMATIVA') return false;
+  return true;
+}
+
+function mergeCommunityTransformers(remote: TransformerSpec[], local: TransformerSpec[]): TransformerSpec[] {
+  const merged = new Map<string, TransformerSpec>();
+  for (const candidate of [...remote, ...local]) {
+    const item = normalizeCommunityTransformer(candidate);
+    if (!item) continue;
+    const current = merged.get(item.id);
+    if (!current || Date.parse(item.updatedAt || '') >= Date.parse(current.updatedAt || '')) merged.set(item.id, item);
+  }
+  return Array.from(merged.values()).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function stableCommunityJson(transformers: TransformerSpec[]): string {
+  return JSON.stringify(transformers.map((item) => ({ ...item, dataOrigin: 'COMMUNITY' })), null, 2);
+}
+
+async function putCommunityFile(
+  config: GitHubSyncConfig,
+  transformers: TransformerSpec[],
+  sha: string | null
+): Promise<void> {
+  const response = await fetch(contentUrl(config, config.transformerPath, false), {
     method: 'PUT',
     headers: {
-      Authorization: `Bearer ${config.token.trim()}`,
-      Accept: 'application/vnd.github.v3+json',
+      ...githubHeaders(config),
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      message: `sync: placas de transformadores ${new Date().toISOString()}`,
+      content: encodeTextBase64(stableCommunityJson(transformers)),
+      branch: config.branch,
+      ...(sha ? { sha } : {})
+    })
   });
+  if (!response.ok) throw await githubError(response, 'Falha ao enviar os transformadores ao GitHub.');
+}
 
-  if (!putRes.ok) {
-    const putErr = await putRes.json().catch(() => ({}));
-    throw new Error(putErr.message || `Erro ao salvar arquivo no GitHub (${putRes.status})`);
+export async function testGitHubConnection(input: GitHubSyncConfig): Promise<string> {
+  const config = normalizedConfig(input);
+  if (!config.token || !config.owner || !config.repo) throw new Error('Informe token, proprietario e repositorio.');
+  const response = await fetch(
+    `${GITHUB_API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`,
+    { headers: githubHeaders(config) }
+  );
+  if (!response.ok) throw await githubError(response, 'Nao foi possivel acessar o repositorio.');
+  const repository = await response.json() as { full_name?: string; private?: boolean };
+  return `${repository.full_name || `${config.owner}/${config.repo}`} (${repository.private ? 'privado' : 'publico'})`;
+}
+
+export async function syncWithGitHub(
+  input: GitHubSyncConfig,
+  localTransformers: TransformerSpec[]
+): Promise<GitHubSyncResult> {
+  const config = normalizedConfig(input);
+  if (!config.token || !config.owner || !config.repo) throw new Error('Configuracao do GitHub incompleta.');
+
+  const localCommunity = localTransformers
+    .filter(isCommunityTransformer)
+    .map(normalizeCommunityTransformer)
+    .filter((item): item is TransformerSpec => item !== null);
+
+  let finalCommunity: TransformerSpec[] = [];
+  let remoteBeforeCount = 0;
+  let pushed = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const remote = await readCommunityFile(config);
+    remoteBeforeCount = remote.transformers.length;
+    finalCommunity = mergeCommunityTransformers(remote.transformers, localCommunity);
+    const changed = stableCommunityJson(finalCommunity) !== stableCommunityJson(remote.transformers);
+    if (!changed) break;
+    try {
+      await putCommunityFile(config, finalCommunity, remote.sha);
+      pushed = true;
+      break;
+    } catch (error) {
+      if (!(error instanceof GitHubRequestError) || error.status !== 409 || attempt === 2) throw error;
+    }
   }
+
+  const warnings: string[] = [];
+  let normativeTransformers: TransformerSpec[] | null = null;
+  let databaseUpdated = false;
+  try {
+    const databaseMetadata = await getMetadata(config, config.databasePath);
+    if (!databaseMetadata) {
+      warnings.push(`Banco oficial nao encontrado em ${config.databasePath}.`);
+    } else {
+      const lastSha = localStorage.getItem('tx_github_database_sha');
+      if (
+        !databaseMetadata.sha ||
+        databaseMetadata.sha !== lastSha ||
+        getOfflineDatabaseStatus().source !== 'REMOTE'
+      ) {
+        const databaseBytes = await getRawBytes(config, config.databasePath);
+        normativeTransformers = await installRemoteOfflineDatabase(databaseBytes);
+        databaseUpdated = true;
+        if (databaseMetadata.sha) localStorage.setItem('tx_github_database_sha', databaseMetadata.sha);
+      }
+    }
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : 'Falha ao validar o banco oficial remoto.');
+  }
+
+  return {
+    communityTransformers: finalCommunity,
+    normativeTransformers,
+    databaseStatus: getOfflineDatabaseStatus(),
+    uploadedCount: pushed ? localCommunity.length : 0,
+    downloadedCount: Math.max(0, finalCommunity.length - localCommunity.length),
+    databaseUpdated,
+    warnings
+  };
 }

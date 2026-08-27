@@ -12,12 +12,22 @@ import { DatabaseExplorer } from './components/DatabaseExplorer';
 import { NormsAndCalculationsView } from './components/NormsAndCalculationsView';
 import { SettingsView } from './components/SettingsView';
 
-import { InitialDiagnosticData, TransformerSpec, SingleMeasurement } from './types';
-import { NEW_TRANSFORMERS_CURVA_C, ALL_TRANSFORMERS } from './data/transformerDatabase';
+import { InitialDiagnosticData, InmetroTransformerModel, TransformerSpec, SingleMeasurement, MeasurementCycleMode } from './types';
 import { processSingleMeasurement, performFullDiagnosticAnalysis } from './utils/electricalCalculations';
 import { generateTransformerDiagnosticPdf } from './utils/pdfGenerator';
 import { exportDiagnosticToExcel } from './utils/excelExporter';
-import { fetchRemoteTransformers, pushTransformersToRemote, FIXED_TEAM_GITHUB_CONFIG } from './utils/githubSync';
+import {
+  getOfflineDatabaseStatus,
+  getOfflineInmetroModels,
+  loadBundledOfflineDatabase,
+  type OfflineDatabaseStatus
+} from './utils/sqliteAndSplitLoader';
+import { isCommunityTransformer } from './utils/githubSync';
+import {
+  clearDiagnosticDraft,
+  loadDiagnosticDraft,
+  saveDiagnosticDraft
+} from './utils/diagnosticDraft';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'DIAGNOSTIC' | 'DATABASE' | 'NORMS' | 'SETTINGS'>('DIAGNOSTIC');
@@ -56,7 +66,11 @@ export default function App() {
         counter++;
       }
       seen.add(uniqueId);
-      return { ...item, id: uniqueId };
+      return {
+        ...item,
+        id: uniqueId,
+        dataOrigin: item.dataOrigin || (item.state === 'REFERENCIA_NORMATIVA' ? 'NORMATIVE' : 'COMMUNITY')
+      };
     });
   };
 
@@ -74,30 +88,56 @@ export default function App() {
     return [];
   });
 
-  // Auto-fetch remote transformers from team GitHub repository on mount
+  const [offlineDatabaseState, setOfflineDatabaseState] = useState({
+    loading: true,
+    error: '',
+    transformerCount: 0,
+    inmetroModelCount: 0,
+    fuseCount: 0,
+    schemaVersion: 0,
+    generatedAt: '',
+    source: 'BUNDLED' as OfflineDatabaseStatus['source']
+  });
+  const [inmetroModels, setInmetroModels] = useState<InmetroTransformerModel[]>([]);
+
+  // Load the single bundled SQLite database on mount.
   useEffect(() => {
-    async function loadRemoteDatabase() {
+    async function loadOfflineDatabaseOnMount() {
       try {
-        const { transformers: remoteTrafos } = await fetchRemoteTransformers();
-        if (remoteTrafos && remoteTrafos.length > 0) {
+        const normativeTrafos = await loadBundledOfflineDatabase();
+        if (normativeTrafos.length > 0) {
           setTransformers((prevLocal) => {
             const map = new Map<string, TransformerSpec>();
-            remoteTrafos.forEach((t) => { if (t && t.id) map.set(t.id, t); });
             prevLocal.forEach((t) => { if (t && t.id) map.set(t.id, t); });
+            normativeTrafos.forEach((t) => { if (t && t.id) map.set(t.id, t); });
             const merged = sanitizeTransformersList(Array.from(map.values()));
             try {
               localStorage.setItem('tx_analytix_transformers', JSON.stringify(merged));
             } catch (e) {
-              console.error('Failed to save auto-synced transformers', e);
+              console.error('Falha ao salvar os transformadores offline', e);
             }
             return merged;
           });
         }
+        const status = getOfflineDatabaseStatus();
+        setInmetroModels(getOfflineInmetroModels());
+        setOfflineDatabaseState({
+          loading: false,
+          error: '',
+          transformerCount: status.transformerCount,
+          inmetroModelCount: status.inmetroModelCount,
+          fuseCount: status.fuseCount,
+          schemaVersion: status.schemaVersion,
+          generatedAt: status.generatedAt,
+          source: status.source
+        });
       } catch (err) {
-        console.warn('Auto-sync com repositório remoto indisponível (offline ou sem credenciais):', err);
+        const message = err instanceof Error ? err.message : 'Falha ao abrir o banco SQLite offline.';
+        setOfflineDatabaseState((current) => ({ ...current, loading: false, error: message }));
+        console.error('Banco SQLite offline indisponível:', err);
       }
     }
-    loadRemoteDatabase();
+    void loadOfflineDatabaseOnMount();
   }, []);
 
   const handleAddTransformer = (newTrafo: TransformerSpec) => {
@@ -107,7 +147,12 @@ export default function App() {
       uniqueId = `${newTrafo.id || 'TRAFO'}-${counter}`;
       counter++;
     }
-    const trafoWithUniqueId = { ...newTrafo, id: uniqueId };
+    const trafoWithUniqueId = {
+      ...newTrafo,
+      id: uniqueId,
+      dataOrigin: 'COMMUNITY' as const,
+      updatedAt: new Date().toISOString()
+    };
     const updated = [trafoWithUniqueId, ...transformers];
     setTransformers(updated);
     try {
@@ -116,10 +161,6 @@ export default function App() {
       console.error('Failed to save transformer to localStorage', e);
     }
 
-    // Auto push to team GitHub database in background
-    pushTransformersToRemote(updated).catch((e) => {
-      console.warn('Push automático para o GitHub ignorado ou com erro:', e);
-    });
   };
 
   const handleUpdateTransformers = (updated: TransformerSpec[]) => {
@@ -129,6 +170,31 @@ export default function App() {
     } catch (e) {
       console.error('Failed to update transformers in localStorage', e);
     }
+  };
+
+  const handleSyncApplied = (
+    communityTransformers: TransformerSpec[],
+    normativeTransformers: TransformerSpec[] | null,
+    status: OfflineDatabaseStatus
+  ) => {
+    const normative = normativeTransformers || transformers.filter((item) => !isCommunityTransformer(item));
+    const map = new Map<string, TransformerSpec>();
+    normative.forEach((item) => map.set(item.id, { ...item, dataOrigin: 'NORMATIVE' }));
+    communityTransformers.forEach((item) => map.set(item.id, { ...item, dataOrigin: 'COMMUNITY' }));
+    const merged = sanitizeTransformersList(Array.from(map.values()));
+    setInmetroModels(getOfflineInmetroModels());
+    setTransformers(merged);
+    localStorage.setItem('tx_analytix_transformers', JSON.stringify(merged));
+    setOfflineDatabaseState({
+      loading: false,
+      error: '',
+      transformerCount: status.transformerCount,
+      inmetroModelCount: status.inmetroModelCount,
+      fuseCount: status.fuseCount,
+      schemaVersion: status.schemaVersion,
+      generatedAt: status.generatedAt,
+      source: status.source
+    });
   };
 
   // Initial Diagnostic Data State
@@ -164,6 +230,7 @@ export default function App() {
 
   const [selectedTransformer, setSelectedTransformer] = useState<TransformerSpec>(cleanTransformer);
   const [selectedTap, setSelectedTap] = useState<string>('');
+  const [cycleMode, setCycleMode] = useState<MeasurementCycleMode>('5m');
 
   // 3 Measurements State (Zeroed / Ready for Technician Input)
   const [measurements, setMeasurements] = useState<SingleMeasurement[]>([
@@ -172,6 +239,7 @@ export default function App() {
       label: '1ª Medição (T = 0 min)',
       timestamp: new Date().toLocaleTimeString('pt-BR'),
       isLocked: false,
+      isRecorded: false,
       van: 0, vbn: 0, vcn: 0,
       vab: 0, vbc: 0, vca: 0,
       ia: 0, ib: 0, ic: 0, in: 0,
@@ -188,6 +256,7 @@ export default function App() {
       label: '2ª Medição (T = 5 min)',
       timestamp: '',
       isLocked: true,
+      isRecorded: false,
       van: 0, vbn: 0, vcn: 0,
       vab: 0, vbc: 0, vca: 0,
       ia: 0, ib: 0, ic: 0, in: 0,
@@ -204,6 +273,7 @@ export default function App() {
       label: '3ª Medição (T = 10 min)',
       timestamp: '',
       isLocked: true,
+      isRecorded: false,
       van: 0, vbn: 0, vcn: 0,
       vab: 0, vbc: 0, vca: 0,
       ia: 0, ib: 0, ic: 0, in: 0,
@@ -219,6 +289,43 @@ export default function App() {
 
   // Photos state (up to 5 photos)
   const [photos, setPhotos] = useState<string[]>([]);
+  const draftReadyRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadDiagnosticDraft()
+      .then((draft) => {
+        if (!draft || cancelled) return;
+        setInitialData(draft.initialData);
+        setSelectedTransformer(draft.transformer);
+        setMeasurements(draft.measurements);
+        setCycleMode(draft.cycleMode);
+        setPhotos(draft.photos);
+      })
+      .catch((error) => console.warn('Nao foi possivel restaurar o rascunho do diagnostico.', error))
+      .finally(() => {
+        if (!cancelled) draftReadyRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftReadyRef.current) return;
+    const timeout = window.setTimeout(() => {
+      void saveDiagnosticDraft({
+        version: 1,
+        savedAt: new Date().toISOString(),
+        initialData,
+        transformer: selectedTransformer,
+        measurements,
+        cycleMode,
+        photos
+      }).catch((error) => console.warn('Nao foi possivel salvar o rascunho do diagnostico.', error));
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [initialData, selectedTransformer, measurements, cycleMode, photos]);
 
   // Canvas PNG Data URLs for PDF export
   const hexDataUrlRef = useRef<string>('');
@@ -233,16 +340,22 @@ export default function App() {
 
   // Perform Full Analysis
   const analysis = useMemo(() => {
-    return performFullDiagnosticAnalysis(measurements, selectedTransformer);
-  }, [measurements, selectedTransformer]);
+    return performFullDiagnosticAnalysis(measurements, selectedTransformer, cycleMode);
+  }, [measurements, selectedTransformer, cycleMode]);
 
   // PDF Export
   const handleExportPdf = async () => {
+    const blockers = getReportBlockers();
+    if (blockers.length > 0) {
+      alert(`O laudo nao pode ser emitido ainda:\n- ${blockers.join('\n- ')}`);
+      return;
+    }
     await generateTransformerDiagnosticPdf({
       initialData,
       transformer: selectedTransformer,
       measurements,
       analysis,
+      cycleMode,
       hexDataUrl: hexDataUrlRef.current,
       iticDataUrl: iticDataUrlRef.current,
       photos
@@ -251,6 +364,11 @@ export default function App() {
 
   // Excel Export
   const handleExportExcel = () => {
+    const blockers = getReportBlockers();
+    if (blockers.length > 0) {
+      alert(`A planilha nao pode ser emitida ainda:\n- ${blockers.join('\n- ')}`);
+      return;
+    }
     exportDiagnosticToExcel({
       initialData,
       transformer: selectedTransformer,
@@ -259,8 +377,25 @@ export default function App() {
     });
   };
 
+  function getReportBlockers(): string[] {
+    const blockers: string[] = [];
+    if (!initialData.technicianName.trim()) blockers.push('informe o tecnico responsavel');
+    if (!initialData.technicianCreaCft.trim()) blockers.push('informe o registro CREA/CFT');
+    if (!initialData.cityState.trim()) blockers.push('informe cidade/estado');
+    if (!initialData.transformerTag.trim()) blockers.push('informe a TAG do transformador');
+    if (!initialData.dateTime.trim()) blockers.push('informe data e hora');
+    if (!selectedTransformer.id || selectedTransformer.powerKva <= 0 || selectedTransformer.primaryVoltageV <= 0 || selectedTransformer.secondaryVoltageV <= 0) {
+      blockers.push('selecione ou preencha um transformador valido');
+    }
+    if (!analysis.dataQuality.canIssueReport) {
+      blockers.push('registre tres medicoes completas e corrija as inconsistencias criticas');
+    }
+    return blockers;
+  }
+
   // Reset Form
   const handleNewDiagnostic = () => {
+    void clearDiagnosticDraft().catch((error) => console.warn('Nao foi possivel limpar o rascunho.', error));
     setInitialData({
       concessionaria: 'Energisa',
       locationName: '',
@@ -273,34 +408,37 @@ export default function App() {
     });
 
     setPhotos([]);
+    setSelectedTransformer({ ...cleanTransformer });
+    setSelectedTap('');
+    setCycleMode('5m');
 
     setMeasurements([
       processSingleMeasurement(
         {
-          id: 1, label: '1ª Medição (T = 0 min)', timestamp: '', isLocked: false,
+          id: 1, label: '1ª Medição (T = 0 min)', timestamp: '', isLocked: false, isRecorded: false,
           van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
           powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
           avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
         },
-        selectedTransformer
+        cleanTransformer
       ),
       processSingleMeasurement(
         {
-          id: 2, label: '2ª Medição (T = 5 min)', timestamp: '', isLocked: true,
+          id: 2, label: '2ª Medição (T = 5 min)', timestamp: '', isLocked: true, isRecorded: false,
           van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
           powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
           avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
         },
-        selectedTransformer
+        cleanTransformer
       ),
       processSingleMeasurement(
         {
-          id: 3, label: '3ª Medição (T = 10 min)', timestamp: '', isLocked: true,
+          id: 3, label: '3ª Medição (T = 10 min)', timestamp: '', isLocked: true, isRecorded: false,
           van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
           powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
           avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
         },
-        selectedTransformer
+        cleanTransformer
       )
     ]);
   };
@@ -347,6 +485,8 @@ export default function App() {
               measurements={measurements}
               onChangeMeasurement={handleMeasurementChange}
               selectedTransformer={selectedTransformer}
+              cycleMode={cycleMode}
+              onCycleModeChange={setCycleMode}
             />
 
             {/* Section 4: Diagnostic Analysis & PRODIST Status */}
@@ -389,20 +529,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* Section 6: Diagrama de Suportabilidade ITIC / CBEMA (Full-width Card Page) */}
+            {/* Section 6: Triagem temporal PRODIST (Full-width Card Page) */}
             <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span>
-                    7. Diagrama de Suportabilidade de Tensão (Curva ITIC / CBEMA)
+                    7. Tendência Temporal de Tensão e Corrente
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Envelope de sensibilidade para afundamentos (sags) e elevações (swells) transitórios e permanentes em equipamentos sensíveis.
+                    Cada ponto é classificado nas faixas exatas do PRODIST; incoerências de entrada são destacadas no diagnóstico.
                   </p>
                 </div>
                 <span className="self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  Norma IEEE Std 1100 / ITIC
+                  PRODIST Módulo 8
                 </span>
               </div>
 
@@ -410,6 +550,7 @@ export default function App() {
                 <IticCbemaCurve
                   measurements={measurements}
                   selectedTransformer={selectedTransformer}
+                  cycleMode={cycleMode}
                   width={880}
                   height={520}
                   theme={theme}
@@ -473,8 +614,10 @@ export default function App() {
         {activeTab === 'DATABASE' && (
           <DatabaseExplorer
             transformers={transformers}
+            inmetroModels={inmetroModels}
             onAddTransformer={handleAddTransformer}
             onUpdateTransformers={handleUpdateTransformers}
+            onInmetroModelsUpdated={setInmetroModels}
           />
         )}
 
@@ -483,7 +626,8 @@ export default function App() {
         {activeTab === 'SETTINGS' && (
           <SettingsView
             transformers={transformers}
-            onUpdateTransformers={handleUpdateTransformers}
+            databaseState={offlineDatabaseState}
+            onSyncApplied={handleSyncApplied}
           />
         )}
       </main>

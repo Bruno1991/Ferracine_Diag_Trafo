@@ -1,14 +1,23 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
 import {defineConfig} from 'vite';
+import { fileURLToPath } from 'url';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+
+function normalizeBasePath(value?: string): string {
+  if (!value) return '/';
+  const withLeadingSlash = value.startsWith('/') ? value : `/${value}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
+}
 
 export default defineConfig(() => {
   return {
+    base: normalizeBasePath(process.env.PAGES_BASE_PATH),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': projectRoot,
       },
     },
     server: {

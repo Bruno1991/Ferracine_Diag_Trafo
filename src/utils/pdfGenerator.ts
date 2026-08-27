@@ -1,13 +1,14 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { InitialDiagnosticData, TransformerSpec, SingleMeasurement, DiagnosticAnalysis } from '../types';
-import { NORMATIVE_CITATIONS } from '../data/transformerDatabase';
+import { InitialDiagnosticData, TransformerSpec, SingleMeasurement, DiagnosticAnalysis, MeasurementCycleMode } from '../types';
+import { getDiagnosticRuleValue, getOfflineProdistVoltageRanges } from './sqliteAndSplitLoader';
 
 interface PdfExportOptions {
   initialData: InitialDiagnosticData;
   transformer: TransformerSpec;
   measurements: SingleMeasurement[];
   analysis: DiagnosticAnalysis;
+  cycleMode: MeasurementCycleMode;
   hexDataUrl?: string;
   iticDataUrl?: string;
   photos?: string[];
@@ -71,6 +72,7 @@ export async function generateTransformerDiagnosticPdf({
   transformer,
   measurements,
   analysis,
+  cycleMode,
   hexDataUrl,
   iticDataUrl,
   photos = []
@@ -92,6 +94,10 @@ export async function generateTransformerDiagnosticPdf({
   const primaryColor = [15, 23, 42]; // slate-900
   const secondaryColor = [30, 58, 138]; // blue-900
   const accentColor = [2, 132, 199]; // sky-600
+  const fdLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
+  const voltageRange = getOfflineProdistVoltageRanges().find((range) => range.connection === 'FF' && Math.abs(range.nominalV - transformer.secondaryVoltageV) < 0.01);
+  const cycleDescription = cycleMode === '5s' ? '5 segundos (MODO DE TESTE)' : cycleMode === '5m' ? '5 minutos' : '10 minutos';
+  const measurementOffset = (id: number) => cycleMode === '5s' ? `${(id - 1) * 5} s` : `${(id - 1) * (cycleMode === '5m' ? 5 : 10)} min`;
 
   // Header Builder - Matches App Header
   const drawHeader = (title: string, pageNum: number) => {
@@ -238,7 +244,9 @@ export async function generateTransformerDiagnosticPdf({
   doc.text(`Perdas em Carga Nominais (Pk 75°C): ${transformer.loadLoss75cW} W`, margin + 110, currentY + 35);
 
   doc.text(`Eficiência Nominal de Placa: ${transformer.efficiencyPercent}%`, margin + 4, currentY + 42);
-  doc.text(`Norma de Referência: ${transformer.standardReference}`, margin + 110, currentY + 42);
+  const standardReferenceLines = doc.splitTextToSize(`Norma de Referência: ${transformer.standardReference}`, 72);
+  doc.setFontSize(7.5);
+  doc.text(standardReferenceLines, margin + 110, currentY + 42);
 
   currentY += 54;
 
@@ -258,32 +266,38 @@ export async function generateTransformerDiagnosticPdf({
       [
         'Qualidade de Tensão (PRODIST Mód 8)',
         `${analysis.overallAvgPhasePhaseV} V (Méd. Secundária)`,
-        '0.93 * Vn <= V <= 1.05 * Vn',
+        voltageRange ? `${voltageRange.adequateMinV} a ${voltageRange.adequateMaxV} V (adequada)` : 'Faixa nominal não encontrada',
         analysis.prodist.voltageStatus
       ],
       [
         'Desbalanço de Tensão (FDTP %)',
         `${analysis.prodist.fdtpPercent}%`,
-        'FDTP <= 2.0% (Adequado)',
+        `FDTP <= ${fdLimit.toFixed(1)}% (BT)`,
         analysis.prodist.unbalanceStatus
       ],
       [
         'Carregamento Máximo (% kVA)',
         `${analysis.maxLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
-        '50% a 90% (Faixa Ideal)',
+        `Pico ${analysis.maxLoadingPercent}% | Média ${analysis.avgLoadingPercent}%`,
         analysis.loadingCondition
       ],
       [
         'Elo Fusível Primário Recomendado',
-        analysis.recommendedFuse ? `Elo ${analysis.recommendedFuse.fuseCode}` : 'Elo 3H',
-        'Normas NDUs e ETUs',
-        'Coordenado'
+        analysis.recommendedFuse ? `Elo ${analysis.recommendedFuse.fuseCode}` : 'Não encontrado',
+        analysis.recommendedFuse ? `${analysis.recommendedFuse.sourceDocument} - ${analysis.recommendedFuse.sourceTable}` : 'Sem correspondência exata',
+        analysis.recommendedFuse ? 'Tabela 16' : 'VERIFICAR'
       ],
       [
         'Recomendação de Posição de TAP',
         analysis.recommendedTap,
         'Comutação de Tensão Secundária',
-        analysis.prodist.voltageStatus === 'ADEQUADA' ? 'Manter TAP' : 'Requer Ajuste'
+        !analysis.dataQuality.canIssueTapRecommendation ? 'BLOQUEADO' : analysis.prodist.voltageStatus === 'ADEQUADA' ? 'Manter TAP' : 'Requer Ajuste'
+      ],
+      [
+        'Qualidade / Coerência dos Dados',
+        `${analysis.dataQuality.status} (${analysis.dataQuality.issues.length} ocorrência(s))`,
+        `Ciclo: ${cycleDescription}`,
+        analysis.dataQuality.status
       ],
       [
         'Eficiência Operacional Calculada',
@@ -312,7 +326,7 @@ export async function generateTransformerDiagnosticPdf({
         } else if (val === 'PRECARIA' || val === 'PRECARIO' || val === 'ELEVADO' || val === 'Requer Ajuste') {
           data.cell.styles.textColor = [217, 119, 6];
           data.cell.styles.fontStyle = 'bold';
-        } else if (val === 'CRITICA' || val === 'CRITICO' || val.includes('SOBRECARGA')) {
+        } else if (val === 'CRITICA' || val === 'CRITICO' || val === 'INCONSISTENTE' || val === 'BLOQUEADO' || val.includes('SOBRECARGA')) {
           data.cell.styles.textColor = [220, 38, 38];
           data.cell.styles.fontStyle = 'bold';
         }
@@ -331,14 +345,22 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('4. MEDIÇÕES DE CAMPO REALIZADAS EM 3 ETAPAS DE 5 MINUTOS', margin, currentY);
+  doc.text(`4. MEDIÇÕES DE CAMPO — CICLO ${cycleDescription}`, margin, currentY);
+
+  if (cycleMode === '5s') {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(180, 83, 9);
+    doc.text('MODO DE TESTE: ciclo destinado a validar cálculos e interface; não comprova conformidade regulatória de campanha.', margin, currentY + 4);
+    currentY += 4;
+  }
 
   currentY += 4;
 
   const isTri = transformer.phaseType === 'TRIFASICO';
 
   const rowsMeas = measurements.map((m) => [
-    m.label,
+    `M${m.id} (T=${measurementOffset(m.id)})`,
     m.timestamp || 'N/A',
     isTri ? `${m.van} / ${m.vbn} / ${m.vcn} V` : `${m.van} / ${m.vbn} V`,
     isTri ? `${m.vab} / ${m.vbc} / ${m.vca} V` : `${m.vab} V`,
@@ -383,9 +405,36 @@ export async function generateTransformerDiagnosticPdf({
     }
   });
 
+  // Inconsistências e anomalias exatas encontradas em cada medição
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(analysis.dataQuality.status === 'INCONSISTENTE' ? 190 : 180, analysis.dataQuality.status === 'INCONSISTENTE' ? 18 : 83, analysis.dataQuality.status === 'INCONSISTENTE' ? 60 : 9);
+  doc.text(`5. VALIDAÇÃO DOS DADOS: ${analysis.dataQuality.status}`, margin, currentY);
+  currentY += 3;
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: margin, right: margin },
+    head: [['Medição', 'Severidade', 'Verificação', 'Resultado exato']],
+    body: analysis.dataQuality.issues.length > 0
+      ? analysis.dataQuality.issues.map((issue) => [issue.measurementId ? `M${issue.measurementId}` : 'Bloco', issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA', issue.title, issue.message])
+      : [['Bloco', 'OK', 'Coerência', 'Nenhuma inconsistência detectada nos dados informados.']],
+    theme: 'grid',
+    headStyles: { fillColor: analysis.dataQuality.status === 'INCONSISTENTE' ? [190, 18, 60] : [180, 83, 9], textColor: [255, 255, 255], fontSize: 7 },
+    bodyStyles: { fontSize: 6.5, cellPadding: 1.2 },
+    columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 16 }, 2: { cellWidth: 41 } }
+  });
+
   // Block 5: Parecer Técnico Detalhado
   // @ts-ignore
-  currentY = doc.lastAutoTable.finalY + 10;
+  currentY = doc.lastAutoTable.finalY + 7;
+
+  if (currentY > 235) {
+    doc.addPage();
+    drawHeader('CONTINUAÇÃO: RECOMENDAÇÕES TÉCNICAS', 2);
+    currentY = 30;
+  }
 
   doc.setFillColor(248, 250, 252);
   doc.rect(margin, currentY, pageWidth - margin * 2, 48, 'FD');
@@ -393,7 +442,7 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('5. RECOMENDAÇÕES DE AJUSTE DE TAP E ELO FUSÍVEL DE PROTEÇÃO', margin + 4, currentY + 7);
+  doc.text('6. RECOMENDAÇÕES DE AJUSTE DE TAP E ELO FUSÍVEL DE PROTEÇÃO', margin + 4, currentY + 7);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -457,23 +506,23 @@ export async function generateTransformerDiagnosticPdf({
       [
         'Simetria Fasorial de Tensão',
         `Van=${analysis.avgVan}V | Vbn=${analysis.avgVbn}V | Vcn=${analysis.avgVcn}V`,
-        analysis.prodist.fdtpPercent <= 2.0
-          ? 'Defasagem adequada próxima de 120° com simetria dentro dos limites normativos.'
-          : 'Desequilíbrio de tensão detectado entre as fases. Requer redistribuição de cargas monfásicas.'
+        analysis.prodist.fdtpPercent <= fdLimit
+          ? `FDTP dentro do limite BT de ${fdLimit.toFixed(1)}%. A defasagem angular só é confirmada se os ângulos forem medidos.`
+          : `Desequilíbrio de tensão detectado (FDTP > ${fdLimit.toFixed(1)}%). Verificar rede, carga e coerência da coleta.`
       ],
       [
         'Fator de Desbalanço (FDTP %)',
         `FDTP Medido: ${analysis.prodist.fdtpPercent}%`,
         analysis.prodist.unbalanceStatus === 'ADEQUADO'
-          ? 'FDTP <= 2.0%: Atende plenamente aos critérios do PRODIST Módulo 8 da ANEEL.'
-          : 'FDTP > 2.0%: Fora do limite ideal. Gera correntes de sequência negativa e aquecimento no núcleo.'
+          ? `FDTP <= ${fdLimit.toFixed(1)}%: dentro do limite BT cadastrado do PRODIST.`
+          : `FDTP > ${fdLimit.toFixed(1)}%: fora do limite BT cadastrado do PRODIST.`
       ],
       [
         'Corrente de Neutro (In)',
         `Corrente Média no Neutro: ${analysis.avgIn || 0} A`,
-        analysis.avgIn < 15
-          ? 'Corrente de neutro baixa. Sistema bem equilibrado.'
-          : 'Elevada corrente no neutro decorrente do desequilíbrio entre fases A, B e C.'
+        analysis.dataQuality.issues.some((issue) => issue.code === 'CORRENTE_NEUTRO')
+          ? 'Valor incompatível com a estimativa fasorial a 120°. Conferir ângulos, harmônicos, instrumento e ponto de medição.'
+          : 'Sem incompatibilidade detectada pela triagem fasorial; harmônicos e ângulos medidos continuam necessários para conclusão.'
       ]
     ],
     theme: 'grid',
@@ -481,17 +530,17 @@ export async function generateTransformerDiagnosticPdf({
   });
 
   // ==========================================
-  // PAGE 4: DIAGRAMA DE SUPORTABILIDADE (CURVA ITIC / CBEMA)
+  // PAGE 4: TRIAGEM TEMPORAL PRODIST
   // ==========================================
   doc.addPage();
-  drawHeader('PÁGINA 4: DIAGRAMA DE SUPORTABILIDADE DE TENSÃO (CURVA ITIC / CBEMA)', 4);
+  drawHeader('PÁGINA 4: TRIAGEM TEMPORAL DE TENSÃO E CORRENTE — PRODIST', 4);
 
   currentY = 28;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('7. DIAGRAMA DE SUPORTABILIDADE ITIC / CBEMA (JANELA DE 15 MIN / 3 MEDIÇÕES)', margin, currentY);
+  doc.text(`7. TENDÊNCIA TEMPORAL — CICLO ${cycleDescription}`, margin, currentY);
 
   currentY += 6;
 
@@ -507,36 +556,36 @@ export async function generateTransformerDiagnosticPdf({
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text('Figura 2: Plotagem Temporal e Envelope de Suportabilidade ITIC / CBEMA em Regime Permanente', pageWidth / 2, currentY + iticImgH + 5, { align: 'center' });
+      doc.text('Figura 2: tensão classificada por faixas PRODIST e corrente medida por etapa', pageWidth / 2, currentY + iticImgH + 5, { align: 'center' });
     } catch (e) {
-      console.warn('Erro ao inserir gráfico ITIC no PDF:', e);
+      console.warn('Erro ao inserir gráfico temporal no PDF:', e);
     }
   }
 
   currentY += iticImgH + 10;
 
-  // Detailed ITIC 3-Measurement Breakdown Table for PDF
+  // Classificação PRODIST ponto a ponto
   const iticRows = analysis.iticAnalysis.classifications.map((c) => [
     `Medição M${c.measurementId}`,
     c.timestamp,
     `${c.voltageV} V`,
     `${c.voltagePercent}%`,
     `${c.currentA} A`,
-    c.status === 'ZONA_SEGURA' ? 'Conforme (90%-110%)' : 'Fora dos Limites',
+    c.status === 'ADEQUADA' ? 'Dentro da faixa adequada' : 'Fora da faixa adequada',
     c.status
   ]);
 
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Medição', 'Horário Log', 'Tensão Medida', 'Tensão % Nominal', 'Corrente (A)', 'Faixa Segura', 'Classificação ITIC']],
+    head: [['Medição', 'Horário Log', 'Tensão Medida', 'Tensão % Nominal', 'Corrente (A)', 'Faixa adequada', 'Classificação PRODIST']],
     body: iticRows,
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8.5 },
     didParseCell: (data) => {
       if (data.section === 'body' && data.column.index === 6) {
         const val = data.cell.raw?.toString() || '';
-        if (val === 'ZONA_SEGURA') {
+        if (val === 'ADEQUADA') {
           data.cell.styles.textColor = [22, 163, 74];
           data.cell.styles.fontStyle = 'bold';
         } else {
@@ -566,23 +615,29 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(15, 23, 42);
-  doc.text(`1. ${NORMATIVE_CITATIONS.prodist.title}`, margin, currentY);
+  doc.text('1. PRODIST Módulo 8 — Qualidade do Fornecimento de Energia Elétrica', margin, currentY);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(51, 65, 85);
 
-  const pText = doc.splitTextToSize(NORMATIVE_CITATIONS.prodist.summary, pageWidth - margin * 2);
+  const pText = doc.splitTextToSize('O app usa faixas absolutas por tensão nominal e ligação armazenadas no SQLite. Para BT, o limite FD95 cadastrado é 3,0%; a campanha regulatória possui requisitos próprios de agregação e duração.', pageWidth - margin * 2);
   doc.text(pText, margin, currentY + 4);
 
   currentY += 12;
 
-  const prodistRows = NORMATIVE_CITATIONS.prodist.ranges.map((r) => [r.type, r.range, r.description]);
+  const prodistRows = getOfflineProdistVoltageRanges().map((range) => [
+    `${range.system} (${range.connection})`,
+    `${range.nominalV} V`,
+    `${range.adequateMinV}–${range.adequateMaxV} V`,
+    `${range.precariousLowMinV} até <${range.adequateMinV} ou >${range.adequateMaxV} até ${range.precariousHighMaxV} V`,
+    `<${range.criticalLowBelowV} ou >${range.criticalHighAboveV} V`
+  ]);
 
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Classificação ANEEL', 'Intervalo de Tensão (Vn)', 'Implicação Operacional']],
+    head: [['Sistema', 'Nominal', 'Adequada', 'Precária', 'Crítica']],
     body: prodistRows,
     theme: 'grid',
     headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontSize: 8 }
@@ -601,10 +656,10 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFontSize(8);
 
   const dbInfo = [
-    '• Recomendações de Elos Fusíveis de Distribuição (NDUs / ETUs):',
-    '  - Elos do 1A ao 5A: Utilizam estritamente a nomenclatura TIPO H (ex: 1H, 2H, 3H, 5H).',
-    '  - Elos do 6A ao 100A: Utilizam estritamente a nomenclatura TIPO K (ex: 6K, 8K, 10K, 15K, 25K).',
-    '• Eficiência de Placa: Calculada em função das perdas em vazio (P0) e perdas em carga (Pk 75°C) conforme NBR 5440.'
+    '• Energisa ETU-109.1 / ETU-109.2, Tabela 16, página 142: matriz separada para transformadores monofásicos e trifásicos.',
+    `• Combinação deste equipamento: ${transformer.phaseType}, ${(transformer.primaryVoltageV / 1000).toLocaleString('pt-BR')} kV, ${transformer.powerKva.toLocaleString('pt-BR')} kVA → ${analysis.recommendedFuse ? `elo ${analysis.recommendedFuse.fuseCode}` : 'sem correspondência exata no banco'}.`,
+    '• O código do elo (H ou K) é o valor oficial da célula; o app não cria alternativas H/K/T.',
+    '• Eficiência operacional é uma estimativa de engenharia a partir de P0, Pk, carga, fator de potência e correção térmica.'
   ];
 
   dbInfo.forEach((item, idx) => {
@@ -621,7 +676,14 @@ export async function generateTransformerDiagnosticPdf({
 
   currentY += 4;
 
-  const formulaRows = NORMATIVE_CITATIONS.formulas.map((f) => [f.name, f.formula]);
+  const formulaRows = [
+    ['Potência aparente trifásica', 'S = sqrt(3) x VFF,media x Imedia / 1000'],
+    ['Carregamento', 'Carga (%) = Smedida / Snominal x 100'],
+    ['FDTP — fórmula exata PRODIST', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
+    ['Desbalanço de corrente — triagem do app', '100 x maximo |Ifase-Imedia| / Imedia'],
+    ['Correção térmica', 'Kt = (Tk + Toleo) / (Tk + 75 C); Tk Cu=234,5 C e Tk Al=225 C'],
+    ['Rendimento estimado', 'eta = Pativa / (Pativa + P0 + Pk,calc) x 100']
+  ];
 
   autoTable(doc, {
     startY: currentY,
@@ -805,4 +867,3 @@ export async function generateTransformerDiagnosticPdf({
   const filename = `Laudo_Trafo_${initialData.transformerTag || 'TAG'}_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(filename);
 }
-

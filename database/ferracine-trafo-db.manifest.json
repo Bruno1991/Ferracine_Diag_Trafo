@@ -1,0 +1,80 @@
+{
+  "databaseId": "ferracine-trafo-db",
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-31",
+  "counts": {
+    "transformers": 78,
+    "mineralProfiles": 42,
+    "vegetableProfiles": 36,
+    "fuseRecommendations": 56,
+    "prodistVoltageRanges": 16,
+    "diagnosticRules": 20,
+    "formulas": 9
+  },
+  "files": {
+    "ferracine-trafo-db.json": {
+      "bytes": 117254,
+      "sha256": "409b301b04ee0e5fedb2ffc031ab1d03e34184ba19d74cfc6803648ca1b5fe9f"
+    },
+    "ferracine-trafo-db.sqlite": {
+      "bytes": 53248,
+      "sha256": "50bf9fa5ed0abad93f0ec68f3483da68432a7fd0718eec40c7ac7604044fec88"
+    }
+  },
+  "sourceDocuments": [
+    {
+      "code": "ETU 109.1",
+      "title": "Transformador de distribuição tipo aéreo para redes até 36,2 kV - líquido isolante mineral",
+      "version": "5.0",
+      "date": "2026-07",
+      "fileName": "ETU 109.1 - TRANSFORMADOR DE DISTRIBUIÇÃO TIPO AÉREO PARA REDES ATÉ 36,2 KV.pdf",
+      "sha256": "97b9c048c60a8757e6979f9b20588df9bd48acd361b8c2cd213e61a1b9b397cf",
+      "usedPages": [
+        135,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        147
+      ]
+    },
+    {
+      "code": "ETU 109.2",
+      "title": "Transformador de distribuição tipo aéreo para redes até 36,2 kV - líquido isolante vegetal",
+      "version": "3.0",
+      "date": "2026-07",
+      "fileName": "ETU 109.2 - TRANSFORMADOR DE DISTRIBUIÇÃO TIPO AÉREO PARA REDES ATÉ 36,2 KV.pdf",
+      "sha256": "923655dcad84a512e867cd9921f3cff684f5e2ce8ce3bd0ce44b3f7d4fc9b0e1",
+      "usedPages": [
+        131,
+        133,
+        134,
+        135,
+        136,
+        137,
+        138
+      ]
+    },
+    {
+      "code": "PRODIST Módulo 8",
+      "title": "Qualidade do fornecimento de energia elétrica",
+      "version": "14",
+      "date": null,
+      "fileName": "Prodist_modulo_8_v14.pdf",
+      "sha256": "d0e3c0e9a15f5d46c71f5f1e061e9c5f4887e02dc2d2fc3610fba06faff65a58",
+      "usedPages": [
+        14,
+        16,
+        78,
+        79
+      ]
+    }
+  ],
+  "validation": {
+    "uniqueIds": 78,
+    "maxEfficiencyDeltaPercentagePoints": 0.004904
+  }
+}

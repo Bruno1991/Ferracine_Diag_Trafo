@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
-import { SingleMeasurement, TransformerSpec } from '../types';
-import { processSingleMeasurement } from '../utils/electricalCalculations';
+import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
+import { getMissingMeasurementFields, processSingleMeasurement } from '../utils/electricalCalculations';
 
 interface TimedMeasurementsProps {
   measurements: SingleMeasurement[];
   onChangeMeasurement: (index: number, updated: SingleMeasurement) => void;
   selectedTransformer: TransformerSpec;
+  cycleMode: MeasurementCycleMode;
+  onCycleModeChange: (mode: MeasurementCycleMode) => void;
   onAllCompleted?: () => void;
 }
 
@@ -14,19 +16,19 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   measurements,
   onChangeMeasurement,
   selectedTransformer,
+  cycleMode,
+  onCycleModeChange,
   onAllCompleted
 }) => {
-  // Configurable interval cycle (5 seg, 5 min, or 10 min)
-  const [cycleMode, setCycleMode] = useState<'5s' | '5m' | '10m'>('5m');
   const intervalSeconds = cycleMode === '5s' ? 5 : cycleMode === '5m' ? 300 : 600;
   const intervalMinutes = cycleMode === '5s' ? 0.0833 : cycleMode === '5m' ? 5 : 10;
 
   // Timer 1 (Between Meas 1 and Meas 2)
-  const [timer1Seconds, setTimer1Seconds] = useState<number>(300);
+  const [timer1Seconds, setTimer1Seconds] = useState<number>(intervalSeconds);
   const [isTimer1Running, setIsTimer1Running] = useState<boolean>(false);
 
   // Timer 2 (Between Meas 2 and Meas 3)
-  const [timer2Seconds, setTimer2Seconds] = useState<number>(300);
+  const [timer2Seconds, setTimer2Seconds] = useState<number>(intervalSeconds);
   const [isTimer2Running, setIsTimer2Running] = useState<boolean>(false);
 
   // Effect for Timer 1
@@ -67,6 +69,22 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     return () => clearInterval(interval);
   }, [isTimer2Running, timer2Seconds]);
 
+  // If the page is reloaded during a saved field campaign, restart the full
+  // safety interval instead of leaving the next measurement permanently locked.
+  useEffect(() => {
+    if (measurements[0].isRecorded && measurements[1].isLocked && !isTimer1Running) {
+      setTimer1Seconds(intervalSeconds);
+      setIsTimer1Running(true);
+    }
+  }, [measurements[0].isRecorded, measurements[1].isLocked, intervalSeconds]);
+
+  useEffect(() => {
+    if (measurements[1].isRecorded && measurements[2].isLocked && !isTimer2Running) {
+      setTimer2Seconds(intervalSeconds);
+      setIsTimer2Running(true);
+    }
+  }, [measurements[1].isRecorded, measurements[2].isLocked, intervalSeconds]);
+
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -106,9 +124,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   };
 
   const handleSaveMeas1 = () => {
+    const missing = getMissingMeasurementFields(measurements[0], selectedTransformer);
+    if (missing.length > 0) {
+      alert(`Complete a 1ª medição antes de registrar: ${missing.join(', ')}.`);
+      return;
+    }
     const timestamp = new Date().toLocaleTimeString();
     const updated = processSingleMeasurement(
-      { ...measurements[0], timestamp },
+      { ...measurements[0], timestamp, isRecorded: true },
       selectedTransformer
     );
     onChangeMeasurement(0, updated);
@@ -119,9 +142,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   };
 
   const handleSaveMeas2 = () => {
+    const missing = getMissingMeasurementFields(measurements[1], selectedTransformer);
+    if (missing.length > 0) {
+      alert(`Complete a 2ª medição antes de registrar: ${missing.join(', ')}.`);
+      return;
+    }
     const timestamp = new Date().toLocaleTimeString();
     const updated = processSingleMeasurement(
-      { ...measurements[1], timestamp },
+      { ...measurements[1], timestamp, isRecorded: true },
       selectedTransformer
     );
     onChangeMeasurement(1, updated);
@@ -132,9 +160,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   };
 
   const handleSaveMeas3 = () => {
+    const missing = getMissingMeasurementFields(measurements[2], selectedTransformer);
+    if (missing.length > 0) {
+      alert(`Complete a 3ª medição antes de registrar: ${missing.join(', ')}.`);
+      return;
+    }
     const timestamp = new Date().toLocaleTimeString();
     const updated = processSingleMeasurement(
-      { ...measurements[2], timestamp },
+      { ...measurements[2], timestamp, isRecorded: true },
       selectedTransformer
     );
     onChangeMeasurement(2, updated);
@@ -172,6 +205,11 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
               Coleta de tensões fase-neutro, fase-fase e correntes para diagnóstico contínuo
             </p>
+            {cycleMode === '5s' && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
+                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; não representa campanha regulatória PRODIST.
+              </p>
+            )}
           </div>
         </div>
 
@@ -181,7 +219,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCycleMode('5s');
+                onCycleModeChange('5s');
                 if (!isTimer1Running) setTimer1Seconds(5);
                 if (!isTimer2Running) setTimer2Seconds(5);
               }}
@@ -196,7 +234,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCycleMode('5m');
+                onCycleModeChange('5m');
                 if (!isTimer1Running) setTimer1Seconds(300);
                 if (!isTimer2Running) setTimer2Seconds(300);
               }}
@@ -211,7 +249,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCycleMode('10m');
+                onCycleModeChange('10m');
                 if (!isTimer1Running) setTimer1Seconds(600);
                 if (!isTimer2Running) setTimer2Seconds(600);
               }}

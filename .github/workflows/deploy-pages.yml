@@ -6,6 +6,13 @@ on:
       - main
     paths:
       - 'ferracine_diag_trafo/**'
+      - 'src/**'
+      - 'public/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -34,12 +41,33 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
 
+      - name: Localizar aplicacao
+        id: app
+        shell: bash
+        run: |
+          if [[ -f package.json ]]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          elif [[ -f ferracine_diag_trafo/package.json ]]; then
+            echo "dir=ferracine_diag_trafo" >> "$GITHUB_OUTPUT"
+          else
+            echo "package.json nao encontrado" >&2
+            exit 1
+          fi
+
       - name: Instalar dependencias
-        working-directory: ferracine_diag_trafo
-        run: npm install --no-audit --no-fund
+        working-directory: ${{ steps.app.outputs.dir }}
+        run: npm ci --no-audit --no-fund
+
+      - name: Validar tipos
+        working-directory: ${{ steps.app.outputs.dir }}
+        run: npm run lint
+
+      - name: Executar testes diagnosticos
+        working-directory: ${{ steps.app.outputs.dir }}
+        run: npm test
 
       - name: Gerar aplicacao
-        working-directory: ferracine_diag_trafo
+        working-directory: ${{ steps.app.outputs.dir }}
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: npm run build
@@ -47,7 +75,7 @@ jobs:
       - name: Enviar artefato do Pages
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ferracine_diag_trafo/dist
+          path: ${{ steps.app.outputs.dir }}/dist
 
   deploy:
     environment:
