@@ -145,7 +145,8 @@ function asCategory(value: unknown): TransformerType {
 function asPhaseType(value: unknown): PhaseType {
   const normalized = String(value || '').toUpperCase();
   if (normalized.includes('MONO')) return 'MONOFASICO';
-  if (normalized.includes('BI')) return 'BIFASICO';
+  // Treat any 'BI' (bifásico) indications as monofásico per new requirements
+  if (normalized.includes('BI')) return 'MONOFASICO';
   return 'TRIFASICO';
 }
 

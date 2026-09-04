@@ -3,6 +3,11 @@ import { FileText, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { Header } from './components/Header';
 import { GpsLocationForm } from './components/GpsLocationForm';
 import { TransformerSelector } from './components/TransformerSelector';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { DiagnosticPage } from './pages/DiagnosticPage';
+import { DatabasePage } from './pages/DatabasePage';
+import { NormsPage } from './pages/NormsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { TimedMeasurements } from './components/TimedMeasurements';
 import { DiagnosticSummary } from './components/DiagnosticSummary';
 import { HexagonalDiagram } from './components/HexagonalDiagram';
@@ -30,7 +35,7 @@ import {
 } from './utils/diagnosticDraft';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'DIAGNOSTIC' | 'DATABASE' | 'NORMS' | 'SETTINGS'>('DIAGNOSTIC');
+  // Navigation is now handled by React Router
 
   // Theme State (Light / Dark)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -452,190 +457,59 @@ export default function App() {
     <div className={`min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200 ${theme === 'dark' ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'}`}>
       {/* Header Bar */}
       <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 py-4 space-y-4">
-        {activeTab === 'DIAGNOSTIC' && (
-          <>
-            {/* Section 1: Initial Diagnostic Data & GPS UTM */}
-            <GpsLocationForm
-              initialData={initialData}
-              onChange={setInitialData}
-            />
-
-            {/* Section 2: Transformer Model Database Selection */}
-            <TransformerSelector
-              selectedTransformer={selectedTransformer}
-              onSelectTransformer={(trafo) => {
-                setSelectedTransformer(trafo);
-                // Recalculate measurements with new transformer nominals
-                const updatedList = measurements.map((m) => processSingleMeasurement(m, trafo));
-                setMeasurements(updatedList);
-              }}
-              selectedTap={selectedTap}
-              onTapChange={setSelectedTap}
-              allTransformers={transformers}
-              onAddTransformer={handleAddTransformer}
-              initialData={initialData}
-              onChangeInitialData={setInitialData}
-            />
-
-            {/* Section 3: 3 Timed Measurements (5 min interval) */}
-            <TimedMeasurements
-              measurements={measurements}
-              onChangeMeasurement={handleMeasurementChange}
-              selectedTransformer={selectedTransformer}
-              cycleMode={cycleMode}
-              onCycleModeChange={setCycleMode}
-            />
-
-            {/* Section 4: Diagnostic Analysis & PRODIST Status */}
-            <DiagnosticSummary
-              analysis={analysis}
-              transformer={selectedTransformer}
-              initialData={initialData}
-              onExportPdf={handleExportPdf}
-              onExportExcel={handleExportExcel}
-            />
-
-            {/* Section 5: Diagrama Fasorial Hexagonal (Full-width Card Page) */}
-            <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
-                    6. Diagrama Fasorial Hexagonal de Tensão e Corrente (Simetria e Desbalanço)
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Representação vetorial trifásica com defasagem de 120°, módulo de tensão F-F/F-N e correntes com deslocamento de fator de potência.
-                  </p>
-                </div>
-                <span className="self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  PRODIST Módulo 8 ANEEL
-                </span>
-              </div>
-
-              <div className="w-full overflow-x-auto flex justify-center bg-slate-50 dark:bg-slate-950 p-3 sm:p-4 rounded-lg border border-slate-200 dark:border-slate-800 transition-colors duration-200">
-                <HexagonalDiagram
-                  measurements={measurements}
-                  selectedTransformer={selectedTransformer}
-                  width={880}
-                  height={520}
-                  theme={theme}
-                  onCanvasRendered={(url) => {
-                    hexDataUrlRef.current = url;
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Section 6: Triagem temporal PRODIST (Full-width Card Page) */}
-            <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span>
-                    7. Tendência Temporal de Tensão e Corrente
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Cada ponto é classificado nas faixas exatas do PRODIST; incoerências de entrada são destacadas no diagnóstico.
-                  </p>
-                </div>
-                <span className="self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  PRODIST Módulo 8
-                </span>
-              </div>
-
-              <div className="w-full overflow-x-auto flex justify-center bg-slate-50 dark:bg-slate-950 p-3 sm:p-4 rounded-lg border border-slate-200 dark:border-slate-800 transition-colors duration-200">
-                <IticCbemaCurve
-                  measurements={measurements}
-                  selectedTransformer={selectedTransformer}
-                  cycleMode={cycleMode}
-                  width={880}
-                  height={520}
-                  theme={theme}
-                  onCanvasRendered={(url) => {
-                    iticDataUrlRef.current = url;
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Section 7: Registros Fotográficos do Transformador (Up to 5 Photos) */}
-            <PhotoUploader
-              photos={photos}
-              onPhotosChange={setPhotos}
-            />
-
-            {/* Section 8: Painel Final de Ações (Gerar PDF, Exportar Excel, Novo Teste) */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg p-4 sm:p-5 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 transition-colors duration-200">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 dark:bg-amber-400 inline-block"></span>
-                  Painel de Exportação e Finalização do Diagnóstico
-                </h3>
-                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Gere o laudo técnico completo em PDF (incluindo laudo, gráficos e fotos), exporte a planilha Excel ou inicie um novo teste.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
-                <button
-                  type="button"
-                  onClick={handleNewDiagnostic}
-                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-300 dark:border-slate-700 transition cursor-pointer"
-                >
-                  <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  <span>NOVO TESTE</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExportExcel}
-                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>EXPORTAR EXCEL</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-bold shadow-md transition cursor-pointer"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>GERAR LAUDO PDF</span>
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {activeTab === 'DATABASE' && (
-          <DatabaseExplorer
+      <BrowserRouter><main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 py-4 space-y-4">
+        <Routes>
+          <Route path="/diagnostic" element={<DiagnosticPage
+            initialData={initialData}
+            setInitialData={setInitialData}
             transformers={transformers}
+            setTransformers={setTransformers}
             inmetroModels={inmetroModels}
-            onAddTransformer={handleAddTransformer}
-            onUpdateTransformers={handleUpdateTransformers}
-            onInmetroModelsUpdated={setInmetroModels}
-          />
-        )}
-
-        {activeTab === 'NORMS' && <NormsAndCalculationsView />}
-
-        {activeTab === 'SETTINGS' && (
-          <SettingsView
+            setInmetroModels={setInmetroModels}
+            selectedTransformer={selectedTransformer}
+            setSelectedTransformer={setSelectedTransformer}
+            selectedTap={selectedTap}
+            setSelectedTap={setSelectedTap}
+            cycleMode={cycleMode}
+            setCycleMode={setCycleMode}
+            measurements={measurements}
+            handleMeasurementChange={handleMeasurementChange}
+            analysis={analysis}
+            handleExportPdf={handleExportPdf}
+            handleExportExcel={handleExportExcel}
+            photos={photos}
+            setPhotos={setPhotos}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            handleAddTransformer={handleAddTransformer}
+            handleUpdateTransformers={handleUpdateTransformers}
+            handleSyncApplied={handleSyncApplied}
+          />} />
+          <Route path="/database" element={<DatabasePage
+            transformers={transformers}
+            setTransformers={setTransformers}
+            inmetroModels={inmetroModels}
+            setInmetroModels={setInmetroModels}
+            handleAddTransformer={handleAddTransformer}
+            handleUpdateTransformers={handleUpdateTransformers}
+            handleSyncApplied={handleSyncApplied}
+          />} />
+          <Route path="/norms" element={<NormsPage
+            // Pass any needed props here
+          />} />
+          <Route path="/settings" element={<SettingsPage
             transformers={transformers}
             databaseState={offlineDatabaseState}
-            onSyncApplied={handleSyncApplied}
-          />
-        )}
-      </main>
+            handleSyncApplied={handleSyncApplied}
+          />} />
+          <Route path="*" element={<Navigate to="/diagnostic" replace />} />
+        </Routes>
+      </main></BrowserRouter>
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-3 text-center text-xs text-slate-600 dark:text-slate-400 transition-colors duration-200">

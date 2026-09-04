@@ -711,47 +711,12 @@ export function performFullDiagnosticAnalysis(
         if (!phaseAlerts.some(a => a.type === 'ALERTA_BAIXO_FATOR_POTENCIA')) {
           phaseAlerts.push({
             type: 'ALERTA_BAIXO_FATOR_POTENCIA',
-            message: `Alerta: Baixo Fator de Potência detectado (FP = ${fpFormatted} < 0.92). Requer correção do fator de potência.`,
+            message: `Alerta: Baixo Fator de Potência detectado (FP = ${fpFormatted} < 0.92). Requer // BIFASICO handling removed as per requirements; phase type now treated as MONOFASICO`,
             severity: 'WARNING'
           });
         }
       }
     });
-  } else if (phaseType === 'BIFASICO') {
-    // 2. Bifásico:
-    // a) Angular unbalance: diff between Phase A and Phase B (180° ± 2°, i.e. 178° to 182°)
-    validMeas.forEach((m) => {
-      const angleA = m.angleA !== undefined ? m.angleA : 0;
-      const angleB = m.angleB !== undefined ? m.angleB : 180;
-      let diffAB = Math.abs(angleB - angleA);
-      while (diffAB > 360) diffAB -= 360;
-      
-      if (diffAB < 178 || diffAB > 182) {
-        if (!phaseAlerts.some(a => a.type === 'ERRO_ANGULO_BIFASICO')) {
-          phaseAlerts.push({
-            type: 'ERRO_ANGULO_BIFASICO',
-            message: `Erro de Ângulo Bifásico: Diferença angular entre Fase A e Fase B (${diffAB.toFixed(1)}°) está fora do limite de 180° ± 2° (178° - 182°).`,
-            severity: 'CRITICAL'
-          });
-        }
-      }
-    });
-
-    // b) Current unbalance: Deseq_I = (max_desvio / I_media) * 100 > 15%
-    if (avgIa > 0 || avgIb > 0) {
-      const iMedia = (avgIa + avgIb) / 2;
-      if (iMedia > 0) {
-        const maxDesvioI = Math.max(Math.abs(avgIa - iMedia), Math.abs(avgIb - iMedia));
-        currentUnbalancePercent = (maxDesvioI / iMedia) * 100;
-        if (currentUnbalancePercent > 15.0) {
-          phaseAlerts.push({
-            type: 'ALERTA_DESEQUILIBRIO_CORRENTE',
-            message: `Alerta de Desequilíbrio de Corrente Bifásico: Desequilíbrio (${currentUnbalancePercent.toFixed(1)}%) superior ao limite de 15%.`,
-            severity: 'WARNING'
-          });
-        }
-      }
-    }
   } else {
     // 3. Trifásico:
     // a) Angular unbalance: diff between phases 120° ± 1.5° (118.5° to 121.5°)

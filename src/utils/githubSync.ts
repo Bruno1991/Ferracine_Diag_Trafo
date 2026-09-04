@@ -150,7 +150,7 @@ function normalizeCommunityTransformer(value: unknown): TransformerSpec | null {
   }
 
   const category = item.category === 'RECONDICIONADO' || item.category === 'USADO' ? item.category : 'NOVO';
-  const phaseType = item.phaseType === 'MONOFASICO' || item.phaseType === 'BIFASICO' ? item.phaseType : 'TRIFASICO';
+  const phaseType = item.phaseType === 'MONOFASICO' ? 'MONOFASICO' : 'TRIFASICO';
   return {
     ...item,
     id: item.id.trim().slice(0, 160),

@@ -1,9 +1,8 @@
 import React from 'react';
 import { Cpu, Database, BookOpen, Settings, Sun, Moon } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 
 interface HeaderProps {
-  activeTab: 'DIAGNOSTIC' | 'DATABASE' | 'NORMS' | 'SETTINGS';
-  setActiveTab: (tab: 'DIAGNOSTIC' | 'DATABASE' | 'NORMS' | 'SETTINGS') => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }
@@ -35,8 +34,6 @@ const EnergisaLogo: React.FC<{ className?: string }> = ({ className = "h-8 w-aut
 );
 
 export const Header: React.FC<HeaderProps> = ({
-  activeTab,
-  setActiveTab,
   theme,
   onToggleTheme
 }) => {
@@ -86,57 +83,58 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Bottom Row: Navigation Tabs right below Logo (No scrollbar, responsive grid) */}
         <nav className="w-full bg-slate-100 dark:bg-slate-950 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('DIAGNOSTIC')}
-              className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'DIAGNOSTIC'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-              }`}
+            <NavLink
+              to="/diagnostic"
+              className={({ isActive }) =>
+                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                }`
+              }
             >
               <Cpu className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">Diagnóstico</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('DATABASE')}
-              className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'DATABASE'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-              }`}
+            </NavLink>
+            <NavLink
+              to="/database"
+              className={({ isActive }) =>
+                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                }`
+              }
             >
               <Database className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">Transformadores Cadastrados</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('NORMS')}
-              className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'NORMS'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-              }`}
+            </NavLink>
+            <NavLink
+              to="/norms"
+              className={({ isActive }) =>
+                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                }`
+              }
             >
               <BookOpen className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">Base Normativa</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('SETTINGS')}
-              className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'SETTINGS'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-              }`}
+            </NavLink>
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                }`
+              }
             >
               <Settings className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">Configurações</span>
-            </button>
+            </NavLink>
           </div>
         </nav>
 
