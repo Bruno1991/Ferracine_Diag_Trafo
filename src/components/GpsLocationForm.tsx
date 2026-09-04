@@ -304,35 +304,67 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
           </select>
         </div>
 
-        {/* Nome do Técnico */}
-        <div>
-          <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-            <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>TÉCNICO RESPONSÁVEL</span>
-          </label>
-          <input
-            type="text"
-            value={initialData.technicianName}
-            onChange={(e) => onChange({ ...initialData, technicianName: e.target.value })}
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-            placeholder=""
-          />
-        </div>
+          {/* Eletricista 1 - Nome */}
+          <div>
+            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
+              <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>ELETRICISTA 1 - NOME</span>
+            </label>
+            <input
+              type="text"
+              value={initialData.electrician1Name}
+              onChange={(e) => onChange({ ...initialData, electrician1Name: e.target.value })}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+              placeholder=""
+            />
+          </div>
 
-        {/* CREA / CFT */}
-        <div>
-          <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-            <Award className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>REGISTRO CREA / CFT</span>
-          </label>
-          <input
-            type="text"
-            value={initialData.technicianCreaCft}
-            onChange={(e) => onChange({ ...initialData, technicianCreaCft: e.target.value })}
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-            placeholder=""
-          />
-        </div>
+          {/* Eletricista 1 - Matrícula */}
+          <div>
+            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
+              <Award className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>MATRICULA ELETRICISTA 1</span>
+            </label>
+            <input
+              type="text"
+              value={initialData.electrician1Matricula}
+              onChange={(e) => onChange({ ...initialData, electrician1Matricula: e.target.value })}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+              placeholder=""
+            />
+          </div>
+
+          {/* Eletricista 2 - Nome (opcional) */}
+          <div>
+            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
+              <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>ELETRICISTA 2 - NOME</span>
+            </label>
+            <input
+              type="text"
+              value={initialData.electrician2Name || ''}
+              onChange={(e) => onChange({ ...initialData, electrician2Name: e.target.value })}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+              placeholder=""
+            />
+          </div>
+
+          {/* Eletricista 2 - Matrícula (opcional) */}
+          <div>
+            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
+              <Award className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>MATRICULA ELETRICISTA 2</span>
+            </label>
+            <input
+              type="text"
+              value={initialData.electrician2Matricula || ''}
+              onChange={(e) => onChange({ ...initialData, electrician2Matricula: e.target.value })}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+              placeholder=""
+            />
+          </div>
+
+
 
         {/* Cidade / Estado */}
         <div>

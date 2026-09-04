@@ -204,8 +204,10 @@ export default function App() {
     cityState: '',
     dateTime: '',
     utm: null,
-    technicianName: '',
-    technicianCreaCft: '',
+    electrician1Name: '',
+    electrician1Matricula: '',
+    electrician2Name: '',
+    electrician2Matricula: '',
     transformerTag: ''
   });
 
@@ -379,8 +381,9 @@ export default function App() {
 
   function getReportBlockers(): string[] {
     const blockers: string[] = [];
-    if (!initialData.technicianName.trim()) blockers.push('informe o tecnico responsavel');
-    if (!initialData.technicianCreaCft.trim()) blockers.push('informe o registro CREA/CFT');
+    if (!initialData.electrician1Name.trim()) blockers.push('informe o nome do eletricista 1');
+    if (!initialData.electrician1Matricula.trim()) blockers.push('informe a matrícula do eletricista 1');
+    if (initialData.electrician2Name && !initialData.electrician2Matricula.trim()) blockers.push('informe a matrícula do eletricista 2');
     if (!initialData.cityState.trim()) blockers.push('informe cidade/estado');
     if (!initialData.transformerTag.trim()) blockers.push('informe a TAG do transformador');
     if (!initialData.dateTime.trim()) blockers.push('informe data e hora');
@@ -402,8 +405,10 @@ export default function App() {
       cityState: '',
       dateTime: '',
       utm: null,
-      technicianName: '',
-      technicianCreaCft: '',
+      electrician1Name: '',
+      electrician1Matricula: '',
+      electrician2Name: '',
+      electrician2Matricula: '',
       transformerTag: ''
     });
 

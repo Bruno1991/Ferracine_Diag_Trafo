@@ -189,8 +189,8 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
 
-  doc.text(`Técnico Responsável: ${initialData.technicianName || 'Não Informado'}`, margin + 4, currentY + 13);
-  doc.text(`CREA / CFT: ${initialData.technicianCreaCft || 'N/A'}`, margin + 110, currentY + 13);
+  doc.text(`Eletricista 1: ${initialData.electrician1Name || 'Não Informado'}`, margin + 4, currentY + 13);
+  doc.text(`Matrícula Eletricista 1: ${initialData.electrician1Matricula || 'N/A'}`, margin + 110, currentY + 13);
 
   doc.text(`Concessionária: ${initialData.concessionaria || 'N/A'}`, margin + 4, currentY + 20);
   doc.text(`TAG / Nº do Trafo: ${initialData.transformerTag || 'N/A'}`, margin + 110, currentY + 20);
@@ -534,73 +534,10 @@ export async function generateTransformerDiagnosticPdf({
   // ==========================================
   doc.addPage();
   drawHeader('PÁGINA 4: TRIAGEM TEMPORAL DE TENSÃO E CORRENTE — PRODIST', 4);
-
-  currentY = 28;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text(`7. TENDÊNCIA TEMPORAL — CICLO ${cycleDescription}`, margin, currentY);
-
-  currentY += 6;
-
-  const iticImgW = 175;
-  const iticImgH = 104;
-  const iticX = (pageWidth - iticImgW) / 2;
-
-  if (iticDataUrl) {
-    try {
-      doc.setFillColor(15, 23, 42);
-      doc.rect(iticX - 2, currentY - 2, iticImgW + 4, iticImgH + 4, 'F');
-      doc.addImage(iticDataUrl, 'PNG', iticX, currentY, iticImgW, iticImgH);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text('Figura 2: tensão classificada por faixas PRODIST e corrente medida por etapa', pageWidth / 2, currentY + iticImgH + 5, { align: 'center' });
-    } catch (e) {
-      console.warn('Erro ao inserir gráfico temporal no PDF:', e);
-    }
-  }
-
-  currentY += iticImgH + 10;
-
-  // Classificação PRODIST ponto a ponto
-  const iticRows = analysis.iticAnalysis.classifications.map((c) => [
-    `Medição M${c.measurementId}`,
-    c.timestamp,
-    `${c.voltageV} V`,
-    `${c.voltagePercent}%`,
-    `${c.currentA} A`,
-    c.status === 'ADEQUADA' ? 'Dentro da faixa adequada' : 'Fora da faixa adequada',
-    c.status
-  ]);
-
-  autoTable(doc, {
-    startY: currentY,
-    margin: { left: margin, right: margin },
-    head: [['Medição', 'Horário Log', 'Tensão Medida', 'Tensão % Nominal', 'Corrente (A)', 'Faixa adequada', 'Classificação PRODIST']],
-    body: iticRows,
-    theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8.5 },
-    didParseCell: (data) => {
-      if (data.section === 'body' && data.column.index === 6) {
-        const val = data.cell.raw?.toString() || '';
-        if (val === 'ADEQUADA') {
-          data.cell.styles.textColor = [22, 163, 74];
-          data.cell.styles.fontStyle = 'bold';
-        } else {
-          data.cell.styles.textColor = [220, 38, 38];
-          data.cell.styles.fontStyle = 'bold';
-        }
-      }
-    }
-  });
-
-  // ==========================================
-  // PAGE 5: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA
+  // PAGE 4: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA
   // ==========================================
   doc.addPage();
-  drawHeader('PÁGINA 5: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA', 5);
+  drawHeader('PÁGINA 4: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA', 4);
 
   currentY = 28;
 
@@ -705,20 +642,20 @@ export async function generateTransformerDiagnosticPdf({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(initialData.technicianName || 'Responsável Técnico pelo Teste', pageWidth / 2, currentY + 16, { align: 'center' });
+    doc.text(initialData.electrician1Name || 'Eletricista 1', pageWidth / 2, currentY + 16, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`CREA / CFT: ${initialData.technicianCreaCft || 'N/A'} - Diagnóstico Validade Técnica`, pageWidth / 2, currentY + 20, { align: 'center' });
+    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, pageWidth / 2, currentY + 20, { align: 'center' });
   }
 
   // ==========================================
-  // PAGE 6: REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR (SE HOUVER FOTOS)
+  // PAGE 5: REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR (SE HOUVER FOTOS)
   // ==========================================
   if (photos && photos.length > 0) {
     doc.addPage();
-    drawHeader('PÁGINA 6: REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR E INSTALAÇÃO', 6);
+    drawHeader('PÁGINA 5: REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR E INSTALAÇÃO', 5);
 
     currentY = 28;
 
@@ -855,12 +792,12 @@ export async function generateTransformerDiagnosticPdf({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(initialData.technicianName || 'Responsável Técnico pelo Teste', pageWidth / 2, pageHeight - 27, { align: 'center' });
+    doc.text(initialData.electrician1Name || 'Eletricista 1', pageWidth / 2, pageHeight - 27, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`CREA / CFT: ${initialData.technicianCreaCft || 'N/A'} - Validação do Registro Fotográfico`, pageWidth / 2, pageHeight - 23, { align: 'center' });
+    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, pageWidth / 2, pageHeight - 23, { align: 'center' });
   }
 
   // Save / Download PDF

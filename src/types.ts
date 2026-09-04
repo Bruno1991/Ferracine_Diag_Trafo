@@ -1,5 +1,5 @@
 export type TransformerType = 'NOVO' | 'RECONDICIONADO' | 'USADO';
-export type PhaseType = 'TRIFASICO' | 'BIFASICO' | 'MONOFASICO';
+export type PhaseType = 'TRIFASICO' | 'MONOFASICO';
 export type MeasurementCycleMode = '5s' | '5m' | '10m';
 export type TransformerCatalogSource = 'INMETRO' | 'ETU' | 'FIELD';
 export type InmetroValidationStatus =
@@ -13,7 +13,7 @@ export interface InmetroTransformerModel {
   id: string;
   category: 'NOVO' | 'RECONDICIONADO';
   manufacturer: string;
-  phaseType: Exclude<PhaseType, 'BIFASICO'>;
+  phaseType: PhaseType;
   model?: string;
   powerKva: number;
   voltageClassKv: number;
@@ -107,8 +107,12 @@ export interface InitialDiagnosticData {
   cityState: string;
   dateTime: string;
   utm: UtmCoordinates | null;
-  technicianName: string;
-  technicianCreaCft: string;
+  electrician1Name: string;
+  electrician1Matricula: string;
+  electrician2Name?: string;
+  electrician2Matricula?: string;
+  gpsLatitude?: number;
+  gpsLongitude?: number;
   transformerTag: string;
   transformerBrand?: string;
   serialNumber?: string;
@@ -163,28 +167,9 @@ export interface ProdistStatus {
   fdtpPercent: number;
 }
 
-/** Mantido com este nome por compatibilidade; representa a triagem de tensão PRODIST. */
-export type IticStatus = 'ADEQUADA' | 'PRECARIA' | 'CRITICA';
-export type IticBlockStatus = 'AGUARDANDO_MEDICOES' | 'CONFORME_PRODIST' | 'ALERTA_PRODIST';
 
-export interface IticMeasurementClassification {
-  measurementId: number;
-  timestamp: string;
-  voltageV: number;
-  nominalV: number;
-  voltagePercent: number;
-  currentA: number;
-  status: IticStatus;
-  statusText: string;
-}
 
-export interface IticBlockAnalysis {
-  windowStatus: IticBlockStatus;
-  windowStatusText: string;
-  hasViolation: boolean;
-  classifications: IticMeasurementClassification[];
-  violationCount: number;
-}
+
 
 export interface DiagnosticAnalysis {
   avgVan: number;
@@ -249,7 +234,6 @@ export interface DiagnosticAnalysis {
   };
   
   prodist: ProdistStatus;
-  iticAnalysis: IticBlockAnalysis;
   
   estimatedCopperLossW: number;
   estimatedIronLossW: number;
