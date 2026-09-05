@@ -424,12 +424,14 @@ async function syncViaLegacyGitHubApi(
   };
 }
 
+export const DEFAULT_WORKER_URL = 'https://ferracine-diag-trafo-sync.contato-elias-inbox.workers.dev';
+
 export async function syncWithGitHub(
   input: GitHubSyncConfig,
   localTransformers: TransformerSpec[]
 ): Promise<GitHubSyncResult> {
   const config = normalizedConfig(input);
-  const workerUrl = config.workerUrl || localStorage.getItem('tx_worker_sync_url') || (import.meta as any).env?.VITE_WORKER_SYNC_URL;
+  const workerUrl = config.workerUrl || localStorage.getItem('tx_worker_sync_url') || (import.meta as any).env?.VITE_WORKER_SYNC_URL || DEFAULT_WORKER_URL;
 
   // 1. Tenta Cloudflare Worker se disponível
   if (workerUrl) {

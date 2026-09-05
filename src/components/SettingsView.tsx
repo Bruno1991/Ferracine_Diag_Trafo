@@ -46,7 +46,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   databaseState,
   onSyncApplied
 }) => {
-  const [workerUrl, setWorkerUrl] = useState(() => localStorage.getItem(WORKER_URL_KEY) || '');
+  const [workerUrl, setWorkerUrl] = useState(() => localStorage.getItem(WORKER_URL_KEY) || 'https://ferracine-diag-trafo-sync.contato-elias-inbox.workers.dev');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; text: string } | null>(null);
