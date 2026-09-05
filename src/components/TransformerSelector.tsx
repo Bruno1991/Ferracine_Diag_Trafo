@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Database, Zap, Shield, Sliders, PlusCircle, RefreshCw, Save, Check } from 'lucide-react';
-import { TransformerSpec, TransformerType, PhaseType, InitialDiagnosticData } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Database, Zap, Shield, Sliders, PlusCircle, RefreshCw, Save, Check, Search, X } from 'lucide-react';
+import { TransformerSpec, TransformerType, PhaseType, InitialDiagnosticData, InmetroTransformerModel } from '../types';
 import { computeNominalLossesAndEfficiency } from '../utils/electricalCalculations';
 
 export function buildTransformerNameOrId(
@@ -32,6 +32,7 @@ interface TransformerSelectorProps {
   selectedTap: string;
   onTapChange: (tap: string) => void;
   allTransformers: TransformerSpec[];
+  inmetroModels?: InmetroTransformerModel[];
   onAddTransformer: (newTrafo: TransformerSpec) => void;
   initialData?: InitialDiagnosticData;
   onChangeInitialData?: (updated: InitialDiagnosticData) => void;
@@ -43,6 +44,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
   selectedTap,
   onTapChange,
   allTransformers,
+  inmetroModels = [],
   onAddTransformer,
   initialData,
   onChangeInitialData
@@ -155,6 +157,105 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
   const [loadLoss75cW, setLoadLoss75cW] = useState<number | ''>(selectedTransformer.loadLoss75cW || '');
   
   const [savedSuccessMessage, setSavedSuccessMessage] = useState<string | null>(null);
+
+  // Estados para busca e filtragem no catálogo completo de placas
+  const [plateSearchTerm, setPlateSearchTerm] = useState<string>('');
+  const [plateCatalogSource, setPlateCatalogSource] = useState<'ALL' | 'FIELD' | 'INMETRO' | 'ETU'>('ALL');
+
+  // Converte os modelos cadastrados no banco INMETRO / PBE para especificações técnicas utilizáveis
+  const inmetroTransformers: TransformerSpec[] = useMemo(() => {
+    if (!inmetroModels || inmetroModels.length === 0) return [];
+    return inmetroModels.map((m) => {
+      const p0 = m.nominalConventionalNoLoadW ?? m.nominalReliableNoLoadW ?? 0;
+      const pTotal = m.nominalConventionalTotalW ?? m.nominalReliableTotalW ?? 0;
+      const pk = m.derivedLoadLossW ?? (pTotal > p0 ? pTotal - p0 : 0);
+      const totalLossW = pTotal > 0 ? pTotal : (p0 + pk);
+
+      const primaryVoltageV =
+        m.voltageClassKv === 15 ? 13800 :
+        m.voltageClassKv === 34.5 ? 34500 :
+        m.voltageClassKv === 24.2 ? 24200 :
+        (m.voltageClassKv >= 1000 ? m.voltageClassKv : (m.voltageClassKv * 1000 || 13800));
+
+      const secondaryVoltageV = m.phaseType === 'MONOFASICO' ? 240 : 220;
+      const secondaryNeutralV = m.phaseType === 'MONOFASICO' ? 120 : 127;
+      const impedancePercent = m.powerKva <= 45 ? 3.5 : m.powerKva <= 150 ? 4.0 : 4.5;
+      const windingMaterial: 'COBRE' | 'ALUMINIO' = m.windingCopper ? 'COBRE' : 'ALUMINIO';
+      const category: TransformerType = m.category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'USADO';
+
+      const modelLabel = m.model ? ` — Mod: ${m.model}` : '';
+      const uniqueId = `INMETRO-${m.manufacturer}-${m.powerKva}kVA-${m.phaseType}-${m.id}`.replace(/\s+/g, '_');
+
+      return {
+        id: uniqueId,
+        category,
+        state: m.category,
+        phaseType: m.phaseType,
+        powerKva: m.powerKva,
+        primaryVoltageV,
+        secondaryVoltageV,
+        secondaryNeutralV,
+        impedancePercent,
+        oilTempC: m.temperatureRise65C ? 65 : 55,
+        windingMaterial,
+        oilType: 'MINERAL' as const,
+        brand: m.manufacturer,
+        serialNumber: m.model || '',
+        noLoadLossW: p0,
+        loadLoss75cW: pk,
+        totalLossW,
+        efficiencyPercent: m.efficiencyPercent || 98.5,
+        standardReference: `INMETRO PBE — ${m.manufacturer}${modelLabel}`,
+        dataOrigin: 'NORMATIVE' as const
+      };
+    });
+  }, [inmetroModels]);
+
+  // Separação de placas de campo vs perfis ETU
+  const fieldTransformers = useMemo(() => {
+    return allTransformers.filter(
+      (t) => t.dataOrigin === 'COMMUNITY' || t.state === 'COMMUNITY' || (!t.id.startsWith('ETU-') && !t.id.startsWith('INMETRO-'))
+    );
+  }, [allTransformers]);
+
+  const etuTransformers = useMemo(() => {
+    return allTransformers.filter((t) => t.id.startsWith('ETU-'));
+  }, [allTransformers]);
+
+  // Catálogo completo unificado
+  const fullCatalog: TransformerSpec[] = useMemo(() => {
+    return [...fieldTransformers, ...inmetroTransformers, ...etuTransformers];
+  }, [fieldTransformers, inmetroTransformers, etuTransformers]);
+
+  // Catálogo filtrado por termo de busca e por origem
+  const filteredCatalog = useMemo(() => {
+    const search = plateSearchTerm.trim().toLowerCase();
+
+    const matchesSearch = (t: TransformerSpec) => {
+      if (!search) return true;
+      const str = `${t.id} ${t.brand || ''} ${t.serialNumber || ''} ${t.powerKva}kva ${t.powerKva} kva ${t.phaseType} ${t.standardReference || ''}`.toLowerCase();
+      return str.includes(search);
+    };
+
+    const groups: { categoryName: string; items: TransformerSpec[] }[] = [];
+
+    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'FIELD') {
+      const items = fieldTransformers.filter(matchesSearch);
+      if (items.length > 0) groups.push({ categoryName: `📋 Placas de Campo / Técnicos (${items.length})`, items });
+    }
+
+    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'INMETRO') {
+      const items = inmetroTransformers.filter(matchesSearch);
+      if (items.length > 0) groups.push({ categoryName: `🏛️ Modelos Homologados INMETRO / PBE (${items.length})`, items });
+    }
+
+    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'ETU') {
+      const items = etuTransformers.filter(matchesSearch);
+      if (items.length > 0) groups.push({ categoryName: `⚡ Perfis Normativos Energisa ETU (${items.length})`, items });
+    }
+
+    return groups;
+  }, [plateSearchTerm, plateCatalogSource, fieldTransformers, inmetroTransformers, etuTransformers]);
 
   // Sync state when selectedTransformer prop changes from outside
   useEffect(() => {
@@ -456,7 +557,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
       }
       return;
     }
-    const found = allTransformers.find((t) => t.id === id);
+    const found = fullCatalog.find((t) => t.id === id);
     if (found) {
       onSelectTransformer(found);
       if (onChangeInitialData && initialData) {
@@ -496,20 +597,66 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
       </div>
 
       {/* 1. Carregar Dados de uma Placa Cadastrada no Banco de Dados (NO TOPO) */}
-      <div className="pb-3 border-b border-slate-200 dark:border-slate-800">
-        <label className="label-xs mb-1 block text-blue-700 dark:text-blue-400 font-bold">
-          CARREGAR DADOS DE UMA PLACA JÁ CADASTRADA NO BANCO DE DADOS
-        </label>
+      <div className="pb-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <label className="label-xs block text-blue-700 dark:text-blue-400 font-bold flex items-center gap-1.5">
+            <Database className="w-3.5 h-3.5" />
+            <span>CARREGAR DADOS DE UMA PLACA JÁ CADASTRADA NO BANCO DE DADOS</span>
+          </label>
+          <span className="text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400">
+            {fullCatalog.length} placas cadastradas (INMETRO, Campo, ETU)
+          </span>
+        </div>
+
+        {/* Filtros rápidos: busca por fabricante/kVA e filtro por origem */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="sm:col-span-2 relative">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              value={plateSearchTerm}
+              onChange={(e) => setPlateSearchTerm(e.target.value)}
+              placeholder="Filtrar por fabricante, modelo ou potência (ex: WEG, Romagnole, 45, 75, 112.5...)"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded pl-8 pr-7 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+            />
+            {plateSearchTerm && (
+              <button
+                type="button"
+                onClick={() => setPlateSearchTerm('')}
+                className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <select
+            value={plateCatalogSource}
+            onChange={(e) => setPlateCatalogSource(e.target.value as any)}
+            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 font-bold focus:border-blue-500 focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">Todas as Fontes ({fullCatalog.length})</option>
+            <option value="INMETRO">🏛️ Modelos INMETRO ({inmetroTransformers.length})</option>
+            <option value="FIELD">📋 Placas de Campo ({fieldTransformers.length})</option>
+            <option value="ETU">⚡ Perfis ETU ({etuTransformers.length})</option>
+          </select>
+        </div>
+
+        {/* Dropdown agrupado com todas as placas disponíveis */}
         <select
           value={selectedTransformer.id || ''}
           onChange={(e) => handleSelectPreSavedModel(e.target.value)}
-          className="w-full bg-slate-50 dark:bg-slate-900 border border-blue-300 dark:border-blue-700/80 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none cursor-pointer"
+          className="w-full bg-slate-50 dark:bg-slate-900 border border-blue-300 dark:border-blue-700/80 rounded px-2.5 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none cursor-pointer"
         >
           <option value="">-- Selecionar Placa do Banco de Dados (ou preencher campos abaixo) --</option>
-          {allTransformers.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.id} — %Z: {t.impedancePercent}% | η: {t.efficiencyPercent}%
-            </option>
+          {filteredCatalog.map((group) => (
+            <optgroup key={group.categoryName} label={group.categoryName}>
+              {group.items.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.brand ? `[${t.brand}] ` : ''}{t.powerKva} kVA ({t.phaseType}) — {t.primaryVoltageV >= 1000 ? `${t.primaryVoltageV / 1000}kV` : `${t.primaryVoltageV}V`}/{t.secondaryVoltageV}V | %Z: {t.impedancePercent}% | η: {t.efficiencyPercent}%{t.serialNumber ? ` | Mod: ${t.serialNumber}` : ''}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>

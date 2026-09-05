@@ -67,6 +67,7 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
     handleExportPdf,
     handleExportExcel,
     handleNewDiagnostic,
+    inmetroModels,
     photos,
     setPhotos,
     theme,
@@ -86,6 +87,7 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
         selectedTap={selectedTap}
         onTapChange={setSelectedTap}
         allTransformers={transformers}
+        inmetroModels={inmetroModels}
         onAddTransformer={handleAddTransformer}
         initialData={initialData}
         onChangeInitialData={setInitialData}
