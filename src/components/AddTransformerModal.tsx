@@ -36,7 +36,7 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
     const powerW = powerKva * 1000;
     const efficiencyPercent = Number((((powerW * 0.92) / (powerW * 0.92 + totalLossW)) * 100).toFixed(2));
     
-    const id = `CUSTOM-${category === 'NOVO' ? 'NOV' : 'REC'}-${phaseType === 'TRIFASICO' ? 'TRI' : phaseType === 'BIFASICO' ? 'BI' : 'MONO'}-${powerKva}-${Math.floor(100 + Math.random() * 900)}`;
+    const id = `CUSTOM-${category === 'NOVO' ? 'NOV' : 'REC'}-${phaseType === 'TRIFASICO' ? 'TRI' : 'MONO'}-${powerKva}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newTrafo: TransformerSpec = {
       id,
@@ -112,7 +112,6 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-500 focus:outline-none cursor-pointer"
               >
                 <option value="TRIFASICO">Trifásico (3Ø)</option>
-                <option value="BIFASICO">Bifásico (2Ø)</option>
                 <option value="MONOFASICO">Monofásico (1Ø)</option>
               </select>
             </div>

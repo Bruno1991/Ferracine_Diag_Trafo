@@ -10,7 +10,6 @@ interface PdfExportOptions {
   analysis: DiagnosticAnalysis;
   cycleMode: MeasurementCycleMode;
   hexDataUrl?: string;
-  iticDataUrl?: string;
   photos?: string[];
 }
 
@@ -74,7 +73,6 @@ export async function generateTransformerDiagnosticPdf({
   analysis,
   cycleMode,
   hexDataUrl,
-  iticDataUrl,
   photos = []
 }: PdfExportOptions) {
   const logoBase64 = await getEnergisaLogoBase64();
@@ -177,8 +175,9 @@ export async function generateTransformerDiagnosticPdf({
 
   // Block 1: Identificação do Local e Técnico
   doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(203, 213, 225);
-  doc.rect(margin, currentY, pageWidth - margin * 2, 42, 'FD');
+  const hasElec2 = Boolean(initialData.electrician2Name && initialData.electrician2Name.trim());
+  const block1Height = hasElec2 ? 48 : 42;
+  doc.rect(margin, currentY, pageWidth - margin * 2, block1Height, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
@@ -189,14 +188,24 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
 
-  doc.text(`Eletricista 1: ${initialData.electrician1Name || 'Não Informado'}`, margin + 4, currentY + 13);
-  doc.text(`Matrícula Eletricista 1: ${initialData.electrician1Matricula || 'N/A'}`, margin + 110, currentY + 13);
+  let lineY = currentY + 12;
+  doc.text(`Eletricista 1: ${initialData.electrician1Name || 'Não Informado'}`, margin + 4, lineY);
+  doc.text(`Matrícula 1: ${initialData.electrician1Matricula || 'N/A'}`, margin + 110, lineY);
 
-  doc.text(`Concessionária: ${initialData.concessionaria || 'N/A'}`, margin + 4, currentY + 20);
-  doc.text(`TAG / Nº do Trafo: ${initialData.transformerTag || 'N/A'}`, margin + 110, currentY + 20);
+  if (hasElec2) {
+    lineY += 6;
+    doc.text(`Eletricista 2: ${initialData.electrician2Name}`, margin + 4, lineY);
+    doc.text(`Matrícula 2: ${initialData.electrician2Matricula || 'N/A'}`, margin + 110, lineY);
+  }
 
-  doc.text(`Local: ${initialData.locationName || 'N/A'} (${initialData.cityState || ''})`, margin + 4, currentY + 27);
+  lineY += 6;
+  doc.text(`Concessionária: ${initialData.concessionaria || 'N/A'}`, margin + 4, lineY);
+  doc.text(`TAG / Nº do Trafo: ${initialData.transformerTag || 'N/A'}`, margin + 110, lineY);
 
+  lineY += 6;
+  doc.text(`Local: ${initialData.locationName || 'N/A'} (${initialData.cityState || ''})`, margin + 4, lineY);
+
+  lineY += 7;
   // Single Box Formats for UTM and Geo Coordinates
   let utmStr = '[ 23K 332450,25 7394820,50 ]';
   let geoStr = '[ -23.550520, -46.633308 ]';
@@ -209,10 +218,10 @@ export async function generateTransformerDiagnosticPdf({
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.text(`UTM: ${utmStr}`, margin + 4, currentY + 35);
-  doc.text(`Coordenadas Geográficas: ${geoStr}`, margin + 110, currentY + 35);
+  doc.text(`UTM: ${utmStr}`, margin + 4, lineY);
+  doc.text(`Coordenadas Geográficas: ${geoStr}`, margin + 110, lineY);
 
-  currentY += 46;
+  currentY += block1Height + 4;
 
   // Block 2: Dados de Placa do Transformador
   doc.setFillColor(248, 250, 252);
@@ -489,7 +498,7 @@ export async function generateTransformerDiagnosticPdf({
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text('Figura 1: Diagrama Hexagonal Fasorial Trifásico / Bifásico de Tensão e Corrente', pageWidth / 2, currentY + hexImgH + 5, { align: 'center' });
+      doc.text('Figura 1: Diagrama Hexagonal Fasorial de Tensão e Corrente (Fase-Fase e Fase-Neutro)', pageWidth / 2, currentY + hexImgH + 5, { align: 'center' });
     } catch (e) {
       console.warn('Erro ao inserir gráfico hexagonal no PDF:', e);
     }

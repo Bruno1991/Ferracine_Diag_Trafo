@@ -43,8 +43,6 @@ assert(analysis.dataQuality.issues.some((issue) => issue.code === 'RELACAO_TENSA
 assert(analysis.dataQuality.issues.some((issue) => issue.code === 'DESEQUILIBRIO_CORRENTE' && issue.severity === 'CRITICAL'), 'O desbalanceamento crítico de corrente não foi detectado.');
 assert(analysis.dataQuality.issues.some((issue) => issue.code === 'CRONOLOGIA'), 'A cronologia invertida não foi detectada.');
 assert(!analysis.dataQuality.canIssueTapRecommendation && analysis.recommendedTap.includes('BLOQUEADA'), 'A recomendação de TAP deveria estar bloqueada.');
-assert(analysis.iticAnalysis.classifications[0]?.status === 'PRECARIA', `M1 deveria ser PRECÁRIA; obtido ${analysis.iticAnalysis.classifications[0]?.status}.`);
-assert(analysis.iticAnalysis.classifications.every((item) => item.status === 'PRECARIA'), 'Cada etapa deveria refletir o pior valor F-F (200 V, faixa precária).');
 
 const partialRaw: SingleMeasurement = {
   id: 1, label: 'Parcial', timestamp: '10:00:00', isLocked: false, isRecorded: true,
@@ -62,7 +60,6 @@ const partialAnalysis = performFullDiagnosticAnalysis([
 assert(partial.avgVoltagePhaseNeutral === 0 && partial.avgVoltagePhasePhase === 0, 'Entrada parcial nao pode produzir media trifasica.');
 assert(getMissingMeasurementFields(partial, transformer).includes('Vbn'), 'Campos ausentes da medicao parcial nao foram detectados.');
 assert(partialAnalysis.prodist.voltageStatus === 'A MEDIR', 'Entrada parcial nao pode receber classificacao PRODIST.');
-assert(partialAnalysis.iticAnalysis.classifications.length === 0, 'Entrada parcial nao pode aparecer como ponto PRODIST valido.');
 assert(!partialAnalysis.dataQuality.canIssueTapRecommendation && !partialAnalysis.dataQuality.canIssueReport, 'Entrada parcial deve bloquear TAP e laudo.');
 
 const healthyRaw: SingleMeasurement[] = ['10:00:00', '10:00:05', '10:00:10'].map((timestamp, index) => ({
@@ -82,7 +79,6 @@ const healthy = healthyRaw.map((measurement) => processSingleMeasurement(measure
 const healthyAnalysis = performFullDiagnosticAnalysis(healthy, transformer, '5s');
 assert(healthyAnalysis.dataQuality.status === 'VALIDO' && healthyAnalysis.dataQuality.canIssueReport, 'Tres medicoes coerentes deveriam liberar o laudo.');
 assert(healthyAnalysis.prodist.voltageStatus === 'ADEQUADA', 'Cenario equilibrado deveria ser ADEQUADO no PRODIST.');
-assert(healthyAnalysis.iticAnalysis.classifications.every((item) => item.status === 'ADEQUADA'), 'Tabela ponto a ponto deve concordar com o resumo PRODIST.');
 assert(healthyAnalysis.recommendedTap.includes(`TAP ${transformer.activeTapIndex}`), 'Recomendacao deve usar o TAP real do transformador.');
 
 const serviceWorker = readFileSync(join(process.cwd(), 'public', 'sw.js'), 'utf8');
@@ -95,6 +91,5 @@ console.log(JSON.stringify({
   dataQuality: analysis.dataQuality.status,
   issues: analysis.dataQuality.issues.map((issue) => `${issue.measurementId || 'bloco'}:${issue.code}:${issue.severity}`),
   tap: analysis.recommendedTap,
-  pointStatuses: analysis.iticAnalysis.classifications.map((item) => `M${item.measurementId}:${item.status}`),
   healthyTap: healthyAnalysis.recommendedTap
 }, null, 2));

@@ -1,4 +1,4 @@
-import { SingleMeasurement, TransformerSpec, DiagnosticAnalysis, ProdistStatus, FuseRecommendation, PhaseType, TransformerType, IticBlockAnalysis, IticMeasurementClassification, IticStatus, MeasurementCycleMode } from '../types';
+import { SingleMeasurement, TransformerSpec, DiagnosticAnalysis, ProdistStatus, FuseRecommendation, PhaseType, TransformerType, MeasurementCycleMode } from '../types';
 import { classifyProdistVoltage, findFuseInOfflineDatabase, getDiagnosticRuleValue } from './sqliteAndSplitLoader';
 
 type MeasurementField = keyof Pick<
@@ -45,74 +45,7 @@ function hasValidTransformerIdentity(transformer: TransformerSpec): boolean {
   );
 }
 
-/**
- * Triagem ponto a ponto pelas faixas exatas do PRODIST carregadas do SQLite.
- * O nome da função é preservado por compatibilidade com componentes antigos.
- * Isto não declara conformidade ITIC: a curva ITIC exige magnitude e duração do evento.
- */
-export function evaluateIticBlock(
-  measurements: SingleMeasurement[],
-  transformer: TransformerSpec
-): IticBlockAnalysis {
-  const nominalV = transformer.secondaryVoltageV || 220;
-  const validMeas = measurements.filter((m) => isMeasurementReady(m, transformer));
 
-  if (validMeas.length === 0) {
-    return {
-      windowStatus: 'AGUARDANDO_MEDICOES',
-      windowStatusText: 'Aguardando medições para a triagem de tensão PRODIST.',
-      hasViolation: false,
-      classifications: [],
-      violationCount: 0
-    };
-  }
-
-  const classifications: IticMeasurementClassification[] = (validMeas.length > 0 ? validMeas : measurements).map((m) => {
-    const measV = m.avgVoltagePhasePhase > 0 ? m.avgVoltagePhasePhase : m.avgVoltagePhaseNeutral * Math.sqrt(3);
-    const vPercent = nominalV > 0 ? (measV / nominalV) * 100 : 100;
-    const roundedPercent = Math.round(vPercent * 10) / 10;
-    const roundedV = Math.round(measV * 10) / 10;
-    const roundedI = Math.round(m.avgCurrent * 10) / 10;
-
-    const phaseVoltages = transformer.phaseType === 'TRIFASICO'
-      ? [m.vab, m.vbc, m.vca]
-      : [m.vab];
-    const phaseClassifications = phaseVoltages.map((value) => ({ value, result: classifyProdistVoltage(value, nominalV, 'FF') }));
-    const severity = { ADEQUADA: 0, PRECARIA: 1, CRITICA: 2 } as const;
-    const worst = phaseClassifications.sort((a, b) => severity[b.result?.status || 'CRITICA'] - severity[a.result?.status || 'CRITICA'])[0];
-    const status: IticStatus = worst?.result?.status || 'CRITICA';
-    const statusText = worst?.result
-      ? `${status}: fases ${phaseVoltages.map((value) => `${value} V`).join('/')} (adequada ${worst.result.range.adequateMinV} a ${worst.result.range.adequateMaxV} V)`
-      : `${status}: faixa nominal não encontrada no banco offline`;
-
-    return {
-      measurementId: m.id,
-      timestamp: m.timestamp || 'SEM HORÁRIO',
-      voltageV: Math.round((worst?.value || measV) * 10) / 10,
-      nominalV,
-      voltagePercent: roundedPercent,
-      currentA: roundedI,
-      status,
-      statusText
-    };
-  });
-
-  const violationCount = classifications.filter((c) => c.status !== 'ADEQUADA').length;
-  const hasViolation = violationCount > 0;
-
-  const windowStatus = hasViolation ? 'ALERTA_PRODIST' : 'CONFORME_PRODIST';
-  const windowStatusText = hasViolation
-    ? `Alerta PRODIST: ${violationCount} de ${classifications.length} medição(ões) fora da faixa adequada.`
-    : 'Todas as medições estão na faixa adequada de tensão PRODIST.';
-
-  return {
-    windowStatus,
-    windowStatusText,
-    hasViolation,
-    classifications,
-    violationCount
-  };
-}
 
 /**
  * Calcula perdas em vazio (P0), perdas em carga (Pk) e eficiência nominal
@@ -649,19 +582,6 @@ export function performFullDiagnosticAnalysis(
   // PRODIST
   let prodist = evaluateProdist(overallAvgPhasePhaseV, nominalSecV, maxFdtp);
 
-  // Análise de Bloco Curva ITIC (Janela 15 min / 3 Medições)
-  const iticAnalysis = evaluateIticBlock(measurements, transformer);
-  if (iticAnalysis.classifications.length > 0) {
-    const voltageSeverity = { ADEQUADA: 0, PRECARIA: 1, CRITICA: 2 } as const;
-    const worst = [...iticAnalysis.classifications]
-      .sort((a, b) => voltageSeverity[b.status] - voltageSeverity[a.status])[0];
-    prodist = {
-      ...prodist,
-      voltageStatus: worst.status,
-      voltageClassificationText: worst.statusText
-    };
-  }
-
   // Material dos Enrolamentos & Correção Térmica de Perdas (ABNT NBR 5356 / NBR 5440)
   const windingMaterial: 'ALUMINIO' | 'COBRE' = transformer.windingMaterial || 'ALUMINIO';
   // Constante de temperatura Tk (°C): Alumínio = 225.0 °C; Cobre = 234.5 °C
@@ -711,7 +631,7 @@ export function performFullDiagnosticAnalysis(
         if (!phaseAlerts.some(a => a.type === 'ALERTA_BAIXO_FATOR_POTENCIA')) {
           phaseAlerts.push({
             type: 'ALERTA_BAIXO_FATOR_POTENCIA',
-            message: `Alerta: Baixo Fator de Potência detectado (FP = ${fpFormatted} < 0.92). Requer // BIFASICO handling removed as per requirements; phase type now treated as MONOFASICO`,
+            message: `Alerta: Baixo Fator de Potência detectado (FP = ${fpFormatted} < 0.92). Requer intervenção para correção de reativos.`,
             severity: 'WARNING'
           });
         }
@@ -815,7 +735,6 @@ export function performFullDiagnosticAnalysis(
     cycleMode,
     dataQuality,
     prodist,
-    iticAnalysis,
     estimatedCopperLossW: Math.round(estimatedCopperLossW),
     estimatedIronLossW: Math.round(estimatedIronLossW),
     totalCalculatedLossW: Math.round(totalCalculatedLossW),

@@ -125,33 +125,37 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
           </p>
         </div>
 
-        {/* Status 2: classificação ponto a ponto PRODIST */}
+        {/* Status 2: Classificação de Tensão PRODIST */}
         <div className={`p-3 rounded-lg border flex flex-col justify-between ${
           isAmedir
             ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-            : analysis.iticAnalysis.hasViolation
+            : isCritical || isPrecarious
             ? 'bg-rose-50/90 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-950 dark:text-rose-200'
             : 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200'
         }`}>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-slate-600 dark:text-slate-400">
-              PONTOS FORA DA FAIXA ADEQUADA
+              STATUS DE TENSÃO PRODIST (MÓD. 8)
             </div>
             <div className={`text-sm font-extrabold font-mono flex items-center gap-1.5 ${
-              isAmedir ? 'text-slate-600 dark:text-slate-400' : analysis.iticAnalysis.hasViolation ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'
+              isAmedir
+                ? 'text-slate-600 dark:text-slate-400'
+                : isCritical || isPrecarious
+                ? 'text-rose-700 dark:text-rose-300'
+                : 'text-emerald-700 dark:text-emerald-300'
             }`}>
               {isAmedir ? (
                 <Activity className="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" />
-              ) : analysis.iticAnalysis.hasViolation ? (
+              ) : isCritical || isPrecarious ? (
                 <AlertOctagon className="w-4 h-4 shrink-0 animate-pulse text-rose-600 dark:text-rose-400" />
               ) : (
                 <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               )}
-              <span>{isAmedir ? 'A MEDIR' : analysis.iticAnalysis.windowStatus}</span>
+              <span>{isAmedir ? 'A MEDIR' : analysis.prodist.voltageStatus}</span>
             </div>
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
-            {isAmedir ? 'Aguardando teste' : `${analysis.iticAnalysis.violationCount} de ${analysis.iticAnalysis.classifications.length} pela tabela PRODIST do banco`}
+            {isAmedir ? 'Aguardando teste' : analysis.prodist.voltageClassificationText}
           </p>
         </div>
 
@@ -225,74 +229,6 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       </div>
 
-      {/* Triagem temporal PRODIST */}
-      <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-2">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-            <Activity className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span>CLASSIFICAÇÃO TEMPORAL DE TENSÃO — PRODIST</span>
-          </h3>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
-            analysis.iticAnalysis.hasViolation
-              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-800'
-              : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800'
-          }`}>
-            {analysis.iticAnalysis.windowStatus}
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px] font-mono border-collapse bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-            <thead>
-              <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
-                <th className="py-1.5 px-2 text-left font-bold border-r border-slate-200 dark:border-slate-700">Medição</th>
-                <th className="py-1.5 px-2 text-center font-bold border-r border-slate-200 dark:border-slate-700">Horário</th>
-                <th className="py-1.5 px-2 text-right font-bold border-r border-slate-200 dark:border-slate-700">Tensão (V)</th>
-                <th className="py-1.5 px-2 text-right font-bold border-r border-slate-200 dark:border-slate-700">Tensão (% Nominal)</th>
-                <th className="py-1.5 px-2 text-right font-bold border-r border-slate-200 dark:border-slate-700">Corrente (A)</th>
-                <th className="py-1.5 px-2 text-center font-bold border-r border-slate-200 dark:border-slate-700">Faixa adequada</th>
-                <th className="py-1.5 px-2 text-left font-bold">Classificação PRODIST</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analysis.iticAnalysis.classifications.map((item) => {
-                const isOK = item.status === 'ADEQUADA';
-                return (
-                  <tr key={item.measurementId} className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 font-bold text-slate-800 dark:text-slate-200">
-                      Medição M{item.measurementId}
-                    </td>
-                    <td className="py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 text-center text-slate-600 dark:text-slate-400">
-                      {item.timestamp}
-                    </td>
-                    <td className="py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 text-right font-bold text-slate-900 dark:text-slate-100">
-                      {item.voltageV} V
-                    </td>
-                    <td className={`py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 text-right font-bold ${
-                      isOK ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
-                    }`}>
-                      {item.voltagePercent}%
-                    </td>
-                    <td className="py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 text-right text-purple-700 dark:text-purple-300 font-bold">
-                      {item.currentA} A
-                    </td>
-                    <td className="py-1.5 px-2 border-r border-slate-200 dark:border-slate-800 text-center font-bold">
-                      {isOK ? (
-                        <span className="text-emerald-600 dark:text-emerald-400">✓ Conforme</span>
-                      ) : (
-                        <span className="text-rose-600 dark:text-rose-400">⚠ Violação</span>
-                      )}
-                    </td>
-                    <td className={`py-1.5 px-2 font-bold ${isOK ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>
-                      {item.status}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 };

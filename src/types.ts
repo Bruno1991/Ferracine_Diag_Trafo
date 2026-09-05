@@ -203,7 +203,7 @@ export interface DiagnosticAnalysis {
   voltageUnbalancePercentNema: number;
   currentUnbalancePercent: number;
   phaseAlerts: {
-    type: 'ALERTA_BAIXO_FATOR_POTENCIA' | 'ERRO_ANGULO_BIFASICO' | 'ALERTA_DESEQUILIBRIO_CORRENTE' | 'ERRO_ANGULO_TRIFASICO' | 'CRITICO_DESEQUILIBRIO_TENSAO_NEMA';
+    type: 'ALERTA_BAIXO_FATOR_POTENCIA' | 'ALERTA_DESEQUILIBRIO_CORRENTE' | 'ERRO_ANGULO_TRIFASICO' | 'CRITICO_DESEQUILIBRIO_TENSAO_NEMA';
     message: string;
     severity: 'CRITICAL' | 'WARNING';
   }[];

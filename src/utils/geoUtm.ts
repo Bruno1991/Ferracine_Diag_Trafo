@@ -197,20 +197,20 @@ export function getCurrentGpsPosition(): Promise<UtmCoordinates> {
         resolve(utm);
       },
       (error) => {
-        let msg = 'Erro ao obter localização GPS.';
+        let msg = 'Erro ao adquirir sinal do sensor GPS.';
         if (error.code === error.PERMISSION_DENIED) {
-          msg = 'Permissão de GPS negada pelo usuário.';
+          msg = 'Permissão de GPS do dispositivo negada. Habilite a localização GPS nas configurações do aparelho/navegador.';
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          msg = 'Sinal de GPS indisponível no momento.';
+          msg = 'Sinal de satélite GPS indisponível no momento. Certifique-se de estar com o GPS ativo e a céu aberto.';
         } else if (error.code === error.TIMEOUT) {
-          msg = 'Tempo limite esgotado ao buscar GPS.';
+          msg = 'Tempo limite esgotado ao buscar sinal dos satélites GPS.';
         }
         reject(new Error(msg));
       },
       {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
+        enableHighAccuracy: true, // Força uso do hardware GPS/GNSS ao invés de rede/IP
+        timeout: 15000,
+        maximumAge: 0 // Sem cache de posições anteriores
       }
     );
   });

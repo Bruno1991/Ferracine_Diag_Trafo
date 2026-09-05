@@ -40,7 +40,6 @@ function formatNumber(value: number | undefined, decimals = 2): string {
 
 function phaseLabel(phase: PhaseType): string {
   if (phase === 'MONOFASICO') return 'Monofásico';
-  if (phase === 'BIFASICO') return 'Bifásico';
   return 'Trifásico';
 }
 
@@ -232,7 +231,6 @@ export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({
         >
           <option value="ALL">Todos os tipos de fase</option>
           <option value="TRIFASICO">Trifásicos</option>
-          <option value="BIFASICO">Bifásicos</option>
           <option value="MONOFASICO">Monofásicos</option>
         </select>
         <select

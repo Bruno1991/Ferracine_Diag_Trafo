@@ -15,7 +15,7 @@ export function buildTransformerNameOrId(
   categoryOrState?: string
 ): string {
   const brandClean = (brand?.trim() || 'MARCA').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-  const phaseClean = phaseType.toLowerCase(); // 'monofasico', 'bifasico', 'trifasico'
+  const phaseClean = phaseType.toLowerCase(); // 'monofasico', 'trifasico'
   const powerStr = `${powerKva}kva`;
   const primKvStr = primaryVoltageV >= 1000 ? `${primaryVoltageV / 1000}kv` : `${primaryVoltageV}v`;
   const secStr = secondaryNeutralV > 0 ? `${secondaryVoltageV}v/${secondaryNeutralV}v` : `${secondaryVoltageV}v`;
@@ -173,7 +173,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
     setNoLoadLossW(selectedTransformer.noLoadLossW || '');
     setLoadLoss75cW(selectedTransformer.loadLoss75cW || '');
 
-    if (selectedTransformer.brand !== undefined && selectedTransformer.brand !== initialData.transformerBrand) {
+    if (initialData && onChangeInitialData && selectedTransformer.brand !== undefined && selectedTransformer.brand !== initialData.transformerBrand) {
       onChangeInitialData({
         ...initialData,
         transformerBrand: selectedTransformer.brand,
@@ -444,23 +444,28 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
         loadLoss75cW: 0,
         totalLossW: 0,
         efficiencyPercent: 0,
-        standardReference: 'Dados da Placa do Transformador'
+        standardReference: 'Dados da Placa do Transformador',
+        dateAdded: new Date().toISOString()
       });
-      onChangeInitialData({
-        ...initialData,
-        transformerBrand: '',
-        serialNumber: ''
-      });
+      if (onChangeInitialData && initialData) {
+        onChangeInitialData({
+          ...initialData,
+          transformerBrand: '',
+          serialNumber: ''
+        });
+      }
       return;
     }
     const found = allTransformers.find((t) => t.id === id);
     if (found) {
       onSelectTransformer(found);
-      onChangeInitialData({
-        ...initialData,
-        transformerBrand: found.brand || '',
-        serialNumber: found.serialNumber || initialData.serialNumber || ''
-      });
+      if (onChangeInitialData && initialData) {
+        onChangeInitialData({
+          ...initialData,
+          transformerBrand: found.brand || '',
+          serialNumber: found.serialNumber || initialData.serialNumber || ''
+        });
+      }
     }
   };
 
@@ -555,10 +560,10 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
           </div>
         </div>
 
-        {/* Tipo de Fase (Monofásico, Bifásico, Trifásico) */}
+        {/* Tipo de Fase (Monofásico, Trifásico) */}
         <div>
           <label className="label-xs mb-1 block">TIPO DE FASE</label>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={() => {
@@ -575,24 +580,6 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               }`}
             >
               Monofásico (1Ø)
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setPhaseType('BIFASICO');
-                const norm = computeNominalLossesAndEfficiency(numPower, 'BIFASICO', category, 0, 0, windingMaterial);
-                setNoLoadLossW(norm.noLoadLossW || '');
-                setLoadLoss75cW(norm.loadLoss75cW || '');
-                updateActiveTransformer({ phaseType: 'BIFASICO', noLoadLossW: norm.noLoadLossW, loadLoss75cW: norm.loadLoss75cW });
-              }}
-              className={`py-2 px-1 rounded border text-center text-xs font-bold transition cursor-pointer ${
-                phaseType === 'BIFASICO'
-                  ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
-                  : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
-              }`}
-            >
-              Bifásico (2Ø)
             </button>
 
             <button

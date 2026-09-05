@@ -283,7 +283,7 @@ function readAuxiliaryData(db: SqlDatabase): {
 const SUPPORTED_SCHEMA_VERSION = 3;
 const REQUIRED_RULES = [
   'prodist_fd_limit_bt_percent',
-  'current_unbalance_limit_percent'
+  'current_unbalance_alert_percent'
 ];
 
 function validateDatabaseContent(
@@ -496,7 +496,14 @@ export function getOfflineProdistVoltageRanges(): ProdistVoltageRange[] {
 }
 
 export function getDiagnosticRuleValue(key: string, fallback: number): number {
-  return cachedRules.get(key) ?? fallback;
+  if (cachedRules.has(key)) return cachedRules.get(key)!;
+  if (key === 'current_unbalance_limit_percent' && cachedRules.has('current_unbalance_alert_percent')) {
+    return cachedRules.get('current_unbalance_alert_percent')!;
+  }
+  if (key === 'current_unbalance_alert_percent' && cachedRules.has('current_unbalance_limit_percent')) {
+    return cachedRules.get('current_unbalance_limit_percent')!;
+  }
+  return fallback;
 }
 
 export function classifyProdistVoltage(

@@ -1,23 +1,18 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { FileText, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { Header } from './components/Header';
-import { GpsLocationForm } from './components/GpsLocationForm';
-import { TransformerSelector } from './components/TransformerSelector';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DiagnosticPage } from './pages/DiagnosticPage';
 import { DatabasePage } from './pages/DatabasePage';
 import { NormsPage } from './pages/NormsPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { TimedMeasurements } from './components/TimedMeasurements';
-import { DiagnosticSummary } from './components/DiagnosticSummary';
-import { HexagonalDiagram } from './components/HexagonalDiagram';
-import { IticCbemaCurve } from './components/IticCbemaCurve';
-import { PhotoUploader } from './components/PhotoUploader';
-import { DatabaseExplorer } from './components/DatabaseExplorer';
-import { NormsAndCalculationsView } from './components/NormsAndCalculationsView';
-import { SettingsView } from './components/SettingsView';
 
-import { InitialDiagnosticData, InmetroTransformerModel, TransformerSpec, SingleMeasurement, MeasurementCycleMode } from './types';
+import {
+  InitialDiagnosticData,
+  InmetroTransformerModel,
+  TransformerSpec,
+  SingleMeasurement,
+  MeasurementCycleMode
+} from './types';
 import { processSingleMeasurement, performFullDiagnosticAnalysis } from './utils/electricalCalculations';
 import { generateTransformerDiagnosticPdf } from './utils/pdfGenerator';
 import { exportDiagnosticToExcel } from './utils/excelExporter';
@@ -35,8 +30,6 @@ import {
 } from './utils/diagnosticDraft';
 
 export default function App() {
-  // Navigation is now handled by React Router
-
   // Theme State (Light / Dark)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
@@ -93,106 +86,24 @@ export default function App() {
     return [];
   });
 
+  const initialDbStatus = getOfflineDatabaseStatus();
   const [offlineDatabaseState, setOfflineDatabaseState] = useState({
-    loading: true,
+    loading: !initialDbStatus.loaded,
     error: '',
-    transformerCount: 0,
-    inmetroModelCount: 0,
-    fuseCount: 0,
-    schemaVersion: 0,
-    generatedAt: '',
-    source: 'BUNDLED' as OfflineDatabaseStatus['source']
+    transformerCount: initialDbStatus.transformerCount,
+    inmetroModelCount: initialDbStatus.inmetroModelCount,
+    fuseCount: initialDbStatus.fuseCount,
+    schemaVersion: initialDbStatus.schemaVersion,
+    generatedAt: initialDbStatus.generatedAt,
+    source: initialDbStatus.source
   });
-  const [inmetroModels, setInmetroModels] = useState<InmetroTransformerModel[]>([]);
 
-  // Load the single bundled SQLite database on mount.
-  useEffect(() => {
-    async function loadOfflineDatabaseOnMount() {
-      try {
-        const normativeTrafos = await loadBundledOfflineDatabase();
-        if (normativeTrafos.length > 0) {
-          setTransformers((prevLocal) => {
-            const map = new Map<string, TransformerSpec>();
-            prevLocal.forEach((t) => { if (t && t.id) map.set(t.id, t); });
-            normativeTrafos.forEach((t) => { if (t && t.id) map.set(t.id, t); });
-            const merged = sanitizeTransformersList(Array.from(map.values()));
-            try {
-              localStorage.setItem('tx_analytix_transformers', JSON.stringify(merged));
-            } catch (e) {
-              console.error('Falha ao salvar os transformadores offline', e);
-            }
-            return merged;
-          });
-        }
-        const status = getOfflineDatabaseStatus();
-        setInmetroModels(getOfflineInmetroModels());
-        setOfflineDatabaseState({
-          loading: false,
-          error: '',
-          transformerCount: status.transformerCount,
-          inmetroModelCount: status.inmetroModelCount,
-          fuseCount: status.fuseCount,
-          schemaVersion: status.schemaVersion,
-          generatedAt: status.generatedAt,
-          source: status.source
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Falha ao abrir o banco SQLite offline.';
-        setOfflineDatabaseState((current) => ({ ...current, loading: false, error: message }));
-        console.error('Banco SQLite offline indisponível:', err);
-      }
-    }
-    void loadOfflineDatabaseOnMount();
-  }, []);
+  const [inmetroModels, setInmetroModels] = useState<InmetroTransformerModel[]>(() => getOfflineInmetroModels());
 
-  const handleAddTransformer = (newTrafo: TransformerSpec) => {
-    let uniqueId = newTrafo.id || 'TRAFO-0';
-    let counter = 1;
-    while (transformers.some((t) => t.id === uniqueId)) {
-      uniqueId = `${newTrafo.id || 'TRAFO'}-${counter}`;
-      counter++;
-    }
-    const trafoWithUniqueId = {
-      ...newTrafo,
-      id: uniqueId,
-      dataOrigin: 'COMMUNITY' as const,
-      updatedAt: new Date().toISOString()
-    };
-    const updated = [trafoWithUniqueId, ...transformers];
-    setTransformers(updated);
-    try {
-      localStorage.setItem('tx_analytix_transformers', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Failed to save transformer to localStorage', e);
-    }
-
-  };
-
-  const handleUpdateTransformers = (updated: TransformerSpec[]) => {
-    setTransformers(updated);
-    try {
-      localStorage.setItem('tx_analytix_transformers', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Failed to update transformers in localStorage', e);
-    }
-  };
-
-  const handleSyncApplied = (
-    communityTransformers: TransformerSpec[],
-    normativeTransformers: TransformerSpec[] | null,
-    status: OfflineDatabaseStatus
-  ) => {
-    const normative = normativeTransformers || transformers.filter((item) => !isCommunityTransformer(item));
-    const map = new Map<string, TransformerSpec>();
-    normative.forEach((item) => map.set(item.id, { ...item, dataOrigin: 'NORMATIVE' }));
-    communityTransformers.forEach((item) => map.set(item.id, { ...item, dataOrigin: 'COMMUNITY' }));
-    const merged = sanitizeTransformersList(Array.from(map.values()));
-    setInmetroModels(getOfflineInmetroModels());
-    setTransformers(merged);
-    localStorage.setItem('tx_analytix_transformers', JSON.stringify(merged));
+  const applyDatabaseStatus = (status: OfflineDatabaseStatus, error = '') => {
     setOfflineDatabaseState({
       loading: false,
-      error: '',
+      error,
       transformerCount: status.transformerCount,
       inmetroModelCount: status.inmetroModelCount,
       fuseCount: status.fuseCount,
@@ -200,9 +111,96 @@ export default function App() {
       generatedAt: status.generatedAt,
       source: status.source
     });
+    setInmetroModels(getOfflineInmetroModels());
   };
 
-  // Initial Diagnostic Data State
+  useEffect(() => {
+    let isMounted = true;
+    setOfflineDatabaseState((prev) => ({ ...prev, loading: true, error: '' }));
+
+    void loadBundledOfflineDatabase()
+      .then((bundledTransformers) => {
+        if (!isMounted) return;
+        const status = getOfflineDatabaseStatus();
+        applyDatabaseStatus(status);
+        setTransformers((prev) => {
+          const savedCommunity = prev.filter(isCommunityTransformer);
+          const seen = new Set<string>();
+          const merged: TransformerSpec[] = [];
+
+          for (const item of [...bundledTransformers, ...savedCommunity]) {
+            if (!seen.has(item.id)) {
+              seen.add(item.id);
+              merged.push(item);
+            }
+          }
+          return sanitizeTransformersList(merged);
+        });
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        const status = getOfflineDatabaseStatus();
+        applyDatabaseStatus(status, err instanceof Error ? err.message : 'Erro ao carregar banco offline');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleUpdateTransformers = (updatedList: TransformerSpec[]) => {
+    const cleanList = sanitizeTransformersList(updatedList);
+    setTransformers(cleanList);
+    try {
+      const communityOnly = cleanList.filter(isCommunityTransformer);
+      localStorage.setItem('tx_analytix_transformers', JSON.stringify(communityOnly));
+    } catch (e) {
+      console.error('Failed to save transformers to local storage', e);
+    }
+  };
+
+  const handleAddTransformer = (newTrafo: TransformerSpec) => {
+    const exists = transformers.some((t) => t.id === newTrafo.id);
+    let finalTrafo = { ...newTrafo, dataOrigin: newTrafo.dataOrigin || 'COMMUNITY' as const };
+    if (exists) {
+      finalTrafo = {
+        ...finalTrafo,
+        id: `${newTrafo.id}-${Date.now().toString().slice(-4)}`
+      };
+    }
+    const updated = [finalTrafo, ...transformers];
+    handleUpdateTransformers(updated);
+  };
+
+  const handleSyncApplied = (
+    communityTransformers: TransformerSpec[],
+    normativeTransformers: TransformerSpec[] | null,
+    status: OfflineDatabaseStatus
+  ) => {
+    applyDatabaseStatus(status);
+    setInmetroModels(getOfflineInmetroModels());
+    setTransformers((prev) => {
+      const baseNormative = normativeTransformers || prev.filter((item) => !isCommunityTransformer(item));
+      const seen = new Set<string>();
+      const merged: TransformerSpec[] = [];
+
+      for (const item of [...baseNormative, ...communityTransformers]) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          merged.push(item);
+        }
+      }
+      return sanitizeTransformersList(merged);
+    });
+
+    try {
+      localStorage.setItem('tx_analytix_transformers', JSON.stringify(communityTransformers));
+    } catch (e) {
+      console.error('Failed to persist synced community transformers', e);
+    }
+  };
+
+  // Initial Diagnostic Data
   const [initialData, setInitialData] = useState<InitialDiagnosticData>({
     concessionaria: 'Energisa',
     locationName: '',
@@ -216,7 +214,6 @@ export default function App() {
     transformerTag: ''
   });
 
-  // Selected Transformer Model State (Clean default)
   const cleanTransformer: TransformerSpec = {
     id: '',
     category: 'NOVO',
@@ -334,9 +331,8 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [initialData, selectedTransformer, measurements, cycleMode, photos]);
 
-  // Canvas PNG Data URLs for PDF export
+  // Canvas PNG Data URL for Hexagonal diagram in PDF export
   const hexDataUrlRef = useRef<string>('');
-  const iticDataUrlRef = useRef<string>('');
 
   // Handle Measurement Update
   const handleMeasurementChange = (index: number, updated: SingleMeasurement) => {
@@ -364,7 +360,6 @@ export default function App() {
       analysis,
       cycleMode,
       hexDataUrl: hexDataUrlRef.current,
-      iticDataUrl: iticDataUrlRef.current,
       photos
     });
   };
@@ -388,7 +383,7 @@ export default function App() {
     const blockers: string[] = [];
     if (!initialData.electrician1Name.trim()) blockers.push('informe o nome do eletricista 1');
     if (!initialData.electrician1Matricula.trim()) blockers.push('informe a matrícula do eletricista 1');
-    if (initialData.electrician2Name && !initialData.electrician2Matricula.trim()) blockers.push('informe a matrícula do eletricista 2');
+    if (initialData.electrician2Name && !initialData.electrician2Matricula?.trim()) blockers.push('informe a matrícula do eletricista 2');
     if (!initialData.cityState.trim()) blockers.push('informe cidade/estado');
     if (!initialData.transformerTag.trim()) blockers.push('informe a TAG do transformador');
     if (!initialData.dateTime.trim()) blockers.push('informe data e hora');
@@ -454,69 +449,90 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200 ${theme === 'dark' ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'}`}>
-      {/* Header Bar */}
-      <Header
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
+    <HashRouter>
+      <div className={`min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200 ${theme === 'dark' ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'}`}>
+        {/* Header Bar */}
+        <Header
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
 
-      {/* Main Content Area */}
-      <BrowserRouter><main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 py-4 space-y-4">
-        <Routes>
-          <Route path="/diagnostic" element={<DiagnosticPage
-            initialData={initialData}
-            setInitialData={setInitialData}
-            transformers={transformers}
-            setTransformers={setTransformers}
-            inmetroModels={inmetroModels}
-            setInmetroModels={setInmetroModels}
-            selectedTransformer={selectedTransformer}
-            setSelectedTransformer={setSelectedTransformer}
-            selectedTap={selectedTap}
-            setSelectedTap={setSelectedTap}
-            cycleMode={cycleMode}
-            setCycleMode={setCycleMode}
-            measurements={measurements}
-            handleMeasurementChange={handleMeasurementChange}
-            analysis={analysis}
-            handleExportPdf={handleExportPdf}
-            handleExportExcel={handleExportExcel}
-            photos={photos}
-            setPhotos={setPhotos}
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            handleAddTransformer={handleAddTransformer}
-            handleUpdateTransformers={handleUpdateTransformers}
-            handleSyncApplied={handleSyncApplied}
-          />} />
-          <Route path="/database" element={<DatabasePage
-            transformers={transformers}
-            setTransformers={setTransformers}
-            inmetroModels={inmetroModels}
-            setInmetroModels={setInmetroModels}
-            handleAddTransformer={handleAddTransformer}
-            handleUpdateTransformers={handleUpdateTransformers}
-            handleSyncApplied={handleSyncApplied}
-          />} />
-          <Route path="/norms" element={<NormsPage
-            // Pass any needed props here
-          />} />
-          <Route path="/settings" element={<SettingsPage
-            transformers={transformers}
-            databaseState={offlineDatabaseState}
-            handleSyncApplied={handleSyncApplied}
-          />} />
-          <Route path="*" element={<Navigate to="/diagnostic" replace />} />
-        </Routes>
-      </main></BrowserRouter>
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 py-4 space-y-4">
+          <Routes>
+            <Route
+              path="/diagnostic"
+              element={
+                <DiagnosticPage
+                  initialData={initialData}
+                  setInitialData={setInitialData}
+                  transformers={transformers}
+                  setTransformers={setTransformers}
+                  inmetroModels={inmetroModels}
+                  setInmetroModels={setInmetroModels}
+                  selectedTransformer={selectedTransformer}
+                  setSelectedTransformer={setSelectedTransformer}
+                  selectedTap={selectedTap}
+                  setSelectedTap={setSelectedTap}
+                  cycleMode={cycleMode}
+                  setCycleMode={setCycleMode}
+                  measurements={measurements}
+                  handleMeasurementChange={handleMeasurementChange}
+                  analysis={analysis}
+                  handleExportPdf={handleExportPdf}
+                  handleExportExcel={handleExportExcel}
+                  handleNewDiagnostic={handleNewDiagnostic}
+                  photos={photos}
+                  setPhotos={setPhotos}
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
+                  handleAddTransformer={handleAddTransformer}
+                  handleUpdateTransformers={handleUpdateTransformers}
+                  handleSyncApplied={handleSyncApplied}
+                  onHexCanvasRendered={(url) => {
+                    hexDataUrlRef.current = url;
+                  }}
+                />
+              }
+            />
+            <Route
+              path="/database"
+              element={
+                <DatabasePage
+                  transformers={transformers}
+                  setTransformers={setTransformers}
+                  inmetroModels={inmetroModels}
+                  setInmetroModels={setInmetroModels}
+                  handleAddTransformer={handleAddTransformer}
+                  handleUpdateTransformers={handleUpdateTransformers}
+                />
+              }
+            />
+            <Route
+              path="/norms"
+              element={<NormsPage />}
+            />
+            <Route
+              path="/settings"
+              element={
+                <SettingsPage
+                  transformers={transformers}
+                  databaseState={offlineDatabaseState}
+                  handleSyncApplied={handleSyncApplied}
+                />
+              }
+            />
+            <Route path="*" element={<Navigate to="/diagnostic" replace />} />
+          </Routes>
+        </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-3 text-center text-xs text-slate-600 dark:text-slate-400 transition-colors duration-200">
-        <p className="font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-          Desenvolvido por Ferracine
-        </p>
-      </footer>
-    </div>
+        {/* Footer */}
+        <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-3 text-center text-xs text-slate-600 dark:text-slate-400 transition-colors duration-200">
+          <p className="font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+            Desenvolvido por Ferracine
+          </p>
+        </footer>
+      </div>
+    </HashRouter>
   );
 }
