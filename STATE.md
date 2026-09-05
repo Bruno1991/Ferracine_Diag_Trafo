@@ -69,15 +69,19 @@ O **Ferracine Diag Trafo** é um sistema PWA / Web offline-first voltado para en
     - **📋 Placas de Campo / Técnicos:** Espaço reservado exclusivamente para placas cadastradas pelos usuários em campo.
   - Adicionada barra de **busca em tempo real** (filtro por fabricante, modelo ou potência kVA) e **seletor de categoria** (Todas as Fontes, ETU, Campo, INMETRO).
 
-### 2.6. Ajuste do Laudo Técnico (PDF) e Validação de Medição Instantânea de Campo
-- **Reorganização Estrutural do PDF:**
-  - **Seção 1 (Identificação e Localização):** Campo `TAG / Nº Trafo:` removido do bloco 1. Linhas organizadas com `Equipe:` e `Concessionária:` pareadas harmonicamente no mesmo nível visual.
-  - **Seção 2 (Transformador):** Título renomeado de *"2. ESPECIFICAÇÕES NOMINAIS DA PLACA DO TRANSFORMADOR"* para **`2. DADOS E ESPECIFICAÇÕES NOMINAIS DO TRANSFORMADOR`**, alocando o campo `TAG / Nº Trafo:` dentro dos dados do equipamento (ao lado de Marca / Nº de Série).
-- **Regra Operacional de Campo dos 10 Minutos e Medição Instantânea:**
-  - A 1ª medição em campo é realizada **10 minutos após o fechamento (energização) do transformador**.
-  - As etapas seguintes passam a ser rotuladas: `1ª Medição (T = 10 min pós-fechamento)`, `2ª Medição (T = 20 min)` e `3ª Medição (T = 30 min)`.
-  - **Validação com 1 Medição:** Quando o eletricista registra apenas 1 medição completa, o sistema valida formalmente o diagnóstico como **`VÁLIDO (Medição Instantânea)`** com status `ADEQUADA` e cálculo ativo de comutação/manutenção de TAP (sem bloqueio indevido).
-  - A tolerância fasorial e de tensões PRODIST foi desacoplada de bloqueios críticos, permitindo recomendação de TAP assertiva em cenários reais de baixa tensão (ex: 206,3 V).
+### 2.6. Ajustes no PDF e Suporte à Medição Instantânea
+- **Ajuste Seções 1 e 2 no Laudo:** TAG do trafo movida do cabeçalho da Seção 1 para o bloco de especificações da Seção 2 com o título *"2. DADOS E ESPECIFICAÇÕES NOMINAIS DO TRANSFORMADOR"*.
+- **Medição Instantânea (10 min pós-fechamento):** Validada a operação com medição única sem bloqueio indevido de laudo ou TAP.
+- A tolerância fasorial e de tensões PRODIST foi desacoplada de bloqueios críticos, permitindo recomendação de TAP assertiva em cenários reais de baixa tensão (ex: 206,3 V).
+
+### 2.7. Auditoria dos Cálculos de Carregamento e Alinhamento Normativo (NBR 5356-7, NDU 006 / NDU 007)
+- **Problema Crítico de Campo Identificado:** Em ocorrências reais (ex: Trafo PTCA0121 de 112.5 kVA, onde a Fase C operava a 425 A enquanto a nominal é 295.2 A), o app calculava apenas a média aritmética trifásica global (81.5%) e rotulava o transformador como "IDEAL", mascarando a queima iminente por sobrecarga térmica na Fase C (144.0%). Adicionalmente, o desbalanço de corrente de campo era tratado como "INCONSISTENTE", bloqueando o TAP.
+- **Solução de Engenharia Implementada (Commit `3b81b43`):**
+  - **Cálculo de Carregamento por Fase:** Agora calcula individualmente $I_a/I_{nom}$, $I_b/I_{nom}$ e $I_c/I_{nom}$, identificando a `criticalPhase` e `maxPhaseLoadingPercent`.
+  - **Condição Diagnóstica Térmica:** O enquadramento térmico passa a ser governado pelo ponto mais quente da fase crítica conforme NBR 5356-7 e IEEE Std C57.91 ($>120\%$ = `SOBRECARGA_CRITICA`, $100\%\text{ a }120\%$ = `SOBRECARGA_MODERADA`, $85\%\text{ a }100\%$ = `ELEVADO`, $45\%\text{ a }85\%$ = `IDEAL`, $<45\%$ = `SUB-CARREGADO`).
+  - **Cálculo Físico de Perdas Joule:** Perdas no cobre ($P_{cu}$) sob regime desbalanceado agora utilizam a média quadrática das correntes de fase $(I_a^2 + I_b^2 + I_c^2) / (3 I_{nom}^2) \cdot P_{k,75} \cdot K_t$.
+  - **Desbloqueio de TAP:** O desbalanceamento de corrente de campo passa a ser tratado como alerta operacional de rede (NDU 006 / NDU 007) e não mais como erro de medição do eletricista, liberando o cálculo assertivo de comutação de TAP.
+  - **Parecer Operacional e Relatórios:** Laudo PDF, tela de diagnóstico e planilha Excel agora trazem alertas explícitos de remanejamento e balanceamento de ramais na BT da fase crítica para evitar reincidência de queima do elo fusível primário.
 
 ---
 
