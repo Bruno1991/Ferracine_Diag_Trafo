@@ -206,6 +206,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
         totalLossW,
         efficiencyPercent: m.efficiencyPercent || 98.5,
         standardReference: `INMETRO PBE — ${m.manufacturer}${modelLabel}`,
+        dateAdded: new Date().toISOString().slice(0, 10),
         dataOrigin: 'NORMATIVE' as const
       };
     });
