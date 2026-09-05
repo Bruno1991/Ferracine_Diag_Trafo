@@ -16,12 +16,22 @@ export function getMissingMeasurementFields(
   measurement: SingleMeasurement,
   transformer: TransformerSpec
 ): string[] {
-  const required: MeasurementField[] = transformer.phaseType === 'TRIFASICO'
-    ? ['van', 'vbn', 'vcn', 'vab', 'vbc', 'vca', 'ia', 'ib', 'ic']
-    : ['van', 'vbn', 'vab', 'ia', 'ib'];
-  return required
+  const voltageFields: MeasurementField[] = transformer.phaseType === 'TRIFASICO'
+    ? ['van', 'vbn', 'vcn', 'vab', 'vbc', 'vca']
+    : ['van', 'vbn', 'vab'];
+  const currentFields: MeasurementField[] = transformer.phaseType === 'TRIFASICO'
+    ? ['ia', 'ib', 'ic']
+    : ['ia', 'ib'];
+
+  const missingVoltages = voltageFields
     .filter((field) => !Number.isFinite(measurement[field]) || Number(measurement[field]) <= 0)
     .map((field) => FIELD_LABELS[field]);
+
+  const missingCurrents = currentFields
+    .filter((field) => !Number.isFinite(measurement[field]) || Number(measurement[field]) < 0)
+    .map((field) => FIELD_LABELS[field]);
+
+  return [...missingVoltages, ...missingCurrents];
 }
 
 export function isMeasurementComplete(
@@ -315,27 +325,36 @@ function validateMeasurementData(
   }
 
   measurements.forEach((measurement) => {
-    const missing = getMissingMeasurementFields(measurement, transformer);
-    if (measurement.isRecorded !== true || missing.length > 0) {
-      issues.push({
-        measurementId: measurement.id,
-        code: 'MEDICAO_INCOMPLETA',
-        severity: 'CRITICAL',
-        title: `M${measurement.id}: medicao incompleta`,
-        message: measurement.isRecorded !== true
-          ? `A medicao M${measurement.id} ainda nao foi registrada.`
-          : `Preencha os campos obrigatorios: ${missing.join(', ')}.`
-      });
+    // Only check missing fields if measurement was marked recorded or has values entered
+    const hasData = measurement.isRecorded === true || measurement.van > 0 || measurement.vab > 0;
+    if (hasData) {
+      const missing = getMissingMeasurementFields(measurement, transformer);
+      if (missing.length > 0) {
+        issues.push({
+          measurementId: measurement.id,
+          code: 'MEDICAO_INCOMPLETA',
+          severity: 'WARNING',
+          title: `M${measurement.id}: campos pendentes`,
+          message: `Preencha os campos: ${missing.join(', ')}.`
+        });
+      }
     }
   });
 
   const valid = measurements.filter((m) => isMeasurementReady(m, transformer));
-  if (valid.length !== 3) {
+  if (valid.length === 0) {
     issues.push({
       code: 'MEDICOES_INSUFICIENTES',
       severity: 'CRITICAL',
-      title: 'Campanha de medicao incompleta',
-      message: `Foram registradas ${valid.length} de 3 medicoes completas. TAP e emissao de laudo permanecem bloqueados.`
+      title: 'Nenhuma medição completa',
+      message: 'Preencha e registre pelo menos 1 medição para gerar o laudo.'
+    });
+  } else if (valid.length < 3) {
+    issues.push({
+      code: 'MEDICOES_INSUFICIENTES',
+      severity: 'WARNING',
+      title: `Campanha com ${valid.length} medição(ões)`,
+      message: `Foram registradas ${valid.length} de 3 medições. O laudo técnico é emitido com as medições disponíveis.`
     });
   }
   const fdLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
@@ -451,12 +470,14 @@ function validateMeasurementData(
   }
 
   const hasCritical = issues.some((issue) => issue.severity === 'CRITICAL');
-  const canIssue = !hasCritical && valid.length === 3 && hasValidTransformerIdentity(transformer);
+  const hasTrafo = hasValidTransformerIdentity(transformer);
+  const canIssueTap = !hasCritical && valid.length >= 1 && hasTrafo;
+  const canIssueReport = valid.length >= 1 && hasTrafo;
   return {
     status: hasCritical ? 'INCONSISTENTE' : issues.length > 0 ? 'ALERTA' : 'VALIDO',
     issues,
-    canIssueTapRecommendation: canIssue,
-    canIssueReport: canIssue
+    canIssueTapRecommendation: canIssueTap,
+    canIssueReport: canIssueReport
   };
 }
 

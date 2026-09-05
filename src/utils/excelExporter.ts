@@ -20,14 +20,22 @@ export function exportDiagnosticToExcel({
   const range = getOfflineProdistVoltageRanges().find((item) => item.connection === 'FF' && Math.abs(item.nominalV - transformer.secondaryVoltageV) < 0.01);
 
   // Sheet 1: Diagnostico_e_Trafo
-  const sheet1Data = [
+  const authorsList = (initialData.authors && initialData.authors.length > 0)
+    ? initialData.authors.filter((a) => a.name && a.name.trim())
+    : [
+        ...(initialData.electrician1Name?.trim() ? [{ role: 'ELETRICISTA', name: initialData.electrician1Name.trim(), matricula: initialData.electrician1Matricula?.trim() || '' }] : []),
+        ...(initialData.electrician2Name?.trim() ? [{ role: 'ELETRICISTA', name: initialData.electrician2Name.trim(), matricula: initialData.electrician2Matricula?.trim() || '' }] : [])
+      ];
+
+  const sheet1Data: any[][] = [
     ['LAUDO TÉCNICO DE DIAGNÓSTICO DE TRANSFORMADOR', ''],
     ['Data e Hora do Diagnóstico', initialData.dateTime || new Date().toLocaleString()],
-    ['Eletricista 1', initialData.electrician1Name || 'N/A'],
-    ['Matrícula Eletricista 1', initialData.electrician1Matricula || 'N/A'],
-    ['Eletricista 2', initialData.electrician2Name || 'N/A'],
-    ['Matrícula Eletricista 2', initialData.electrician2Matricula || 'N/A'],
-    ['Concessionária de Energia', initialData.concessionaria || 'N/A'],
+    ...(initialData.equipe?.trim() ? [['Equipe', initialData.equipe.trim()]] : []),
+    ...(authorsList.flatMap((a, idx) => [
+      [`${a.role} #${idx + 1}`, a.name],
+      ...(a.matricula ? [[`Matrícula #${idx + 1}`, a.matricula]] : [])
+    ])),
+    ['Concessionária de Energia', initialData.concessionaria || 'Energisa'],
     ['TAG / Número do Transformador', initialData.transformerTag || 'N/A'],
     ['Localização / Posto', initialData.locationName || 'N/A'],
     ['Cidade / Estado', initialData.cityState || 'N/A'],
@@ -77,10 +85,15 @@ export function exportDiagnosticToExcel({
     'Fator de Potência'
   ];
 
+  const activeMeas = measurements.filter((m) =>
+    m.isRecorded === true || m.van > 0 || m.vab > 0 || m.ia > 0
+  );
+  const toExport = activeMeas.length > 0 ? activeMeas : [measurements[0]];
+
   const stageLabel = (id: number) => analysis.cycleMode === '5s'
     ? `M${id} (T=${(id - 1) * 5} s — modo de teste)`
     : `M${id} (T=${(id - 1) * 10} min)`;
-  const sheet2Rows = measurements.map((m) => [
+  const sheet2Rows = toExport.map((m) => [
     stageLabel(m.id),
     m.timestamp || 'N/A',
     m.van,
@@ -103,7 +116,7 @@ export function exportDiagnosticToExcel({
   ]);
 
   sheet2Rows.push([
-    'MÉDIA GERAL (3 ETAPAS)',
+    toExport.length > 1 ? `MÉDIA DAS ETAPAS (${toExport.length} MEDIÇÕES)` : 'VALORES CONSOLIDADOS (1 MEDIÇÃO)',
     `Ciclo ${analysis.cycleMode === '5s' ? '5 s (teste)' : analysis.cycleMode}`,
     analysis.avgVan,
     analysis.avgVbn,

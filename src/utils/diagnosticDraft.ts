@@ -47,7 +47,8 @@ export async function loadDiagnosticDraft(): Promise<DiagnosticDraft | null> {
         !value ||
         value.version !== 1 ||
         !Array.isArray(value.measurements) ||
-        value.measurements.length !== 3 ||
+        value.measurements.length < 1 ||
+        value.measurements.length > 3 ||
         !Array.isArray(value.photos)
       ) {
         resolve(null);

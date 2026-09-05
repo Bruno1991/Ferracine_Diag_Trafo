@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { MapPin, Navigation, User, Calendar, Building2, CheckCircle2, AlertCircle, Loader2, Award } from 'lucide-react';
-import { InitialDiagnosticData } from '../types';
+import { MapPin, Navigation, User, Calendar, Building2, CheckCircle2, AlertCircle, Loader2, Award, Users, Plus, Trash2 } from 'lucide-react';
+import { InitialDiagnosticData, ReportAuthor, AuthorRole } from '../types';
 import { getCurrentGpsPosition, latLonToUtm, utmToLatLon } from '../utils/geoUtm';
 
 interface GpsLocationFormProps {
@@ -142,6 +142,60 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
     }
   };
 
+  // Authors list initialized from initialData.authors or fallback to legacy fields
+  const authors: ReportAuthor[] = (initialData.authors && initialData.authors.length > 0)
+    ? initialData.authors
+    : [
+        {
+          id: '1',
+          role: 'ELETRICISTA',
+          name: initialData.electrician1Name || '',
+          matricula: initialData.electrician1Matricula || ''
+        },
+        ...(initialData.electrician2Name ? [{
+          id: '2',
+          role: 'ELETRICISTA',
+          name: initialData.electrician2Name,
+          matricula: initialData.electrician2Matricula || ''
+        }] : [])
+      ];
+
+  const updateAuthors = (newAuthors: ReportAuthor[]) => {
+    onChange({
+      ...initialData,
+      authors: newAuthors,
+      electrician1Name: newAuthors[0]?.name || '',
+      electrician1Matricula: newAuthors[0]?.matricula || '',
+      electrician2Name: newAuthors[1]?.name || '',
+      electrician2Matricula: newAuthors[1]?.matricula || ''
+    });
+  };
+
+  const handleAddAuthor = () => {
+    const newAuthor: ReportAuthor = {
+      id: Date.now().toString(),
+      role: 'ELETRICISTA',
+      name: '',
+      matricula: ''
+    };
+    updateAuthors([...authors, newAuthor]);
+  };
+
+  const handleRemoveAuthor = (index: number) => {
+    if (authors.length <= 1) return;
+    const updated = authors.filter((_, i) => i !== index);
+    updateAuthors(updated);
+  };
+
+  const handleAuthorFieldChange = (index: number, field: keyof ReportAuthor, value: string) => {
+    const updated = [...authors];
+    updated[index] = {
+      ...updated[index],
+      [field]: value
+    };
+    updateAuthors(updated);
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
       <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
@@ -269,7 +323,8 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Dados Gerais: Data, Concessionária, Cidade, Equipe */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {/* Data e Hora */}
         <div>
           <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
@@ -304,68 +359,6 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
           </select>
         </div>
 
-          {/* Eletricista 1 */}
-          <div>
-            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-              <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-              <span>ELETRICISTA 1</span>
-            </label>
-            <input
-              type="text"
-              value={initialData.electrician1Name}
-              onChange={(e) => onChange({ ...initialData, electrician1Name: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-              placeholder="Nome do eletricista 1"
-            />
-          </div>
-
-          {/* Eletricista 1 - Matrícula */}
-          <div>
-            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-              <Award className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-              <span>MATRÍCULA</span>
-            </label>
-            <input
-              type="text"
-              value={initialData.electrician1Matricula}
-              onChange={(e) => onChange({ ...initialData, electrician1Matricula: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-              placeholder="Nº da matrícula"
-            />
-          </div>
-
-          {/* Eletricista 2 */}
-          <div>
-            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-              <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-              <span>ELETRICISTA 2</span>
-            </label>
-            <input
-              type="text"
-              value={initialData.electrician2Name || ''}
-              onChange={(e) => onChange({ ...initialData, electrician2Name: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-              placeholder="Nome do eletricista 2 (opcional)"
-            />
-          </div>
-
-          {/* Eletricista 2 - Matrícula */}
-          <div>
-            <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-              <Award className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-              <span>MATRÍCULA</span>
-            </label>
-            <input
-              type="text"
-              value={initialData.electrician2Matricula || ''}
-              onChange={(e) => onChange({ ...initialData, electrician2Matricula: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-              placeholder="Nº da matrícula (opcional)"
-            />
-          </div>
-
-
-
         {/* Cidade / Estado */}
         <div>
           <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
@@ -377,8 +370,116 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
             value={initialData.cityState}
             onChange={(e) => onChange({ ...initialData, cityState: e.target.value })}
             className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-            placeholder=""
+            placeholder="Cidade - UF"
           />
+        </div>
+
+        {/* Campo EQUIPE */}
+        <div>
+          <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
+            <Users className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span>EQUIPE</span>
+          </label>
+          <input
+            type="text"
+            value={initialData.equipe || ''}
+            onChange={(e) => onChange({ ...initialData, equipe: e.target.value })}
+            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+            placeholder="Nome ou código da equipe (opcional)"
+          />
+        </div>
+      </div>
+
+      {/* Seção Dinâmica de Autores do Laudo (Técnicos / Eletricistas) */}
+      <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700/80">
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700/60 flex-wrap gap-2">
+          <div className="flex items-center gap-1.5">
+            <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+              AUTORES DO LAUDO (TÉCNICOS E/OU ELETRICISTAS)
+            </span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+              ({authors.length} autor{authors.length > 1 ? 'es' : ''})
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddAuthor}
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>ADICIONAR TÉCNICO / ELETRICISTA</span>
+          </button>
+        </div>
+
+        <div className="space-y-2.5">
+          {authors.map((author, index) => (
+            <div
+              key={author.id || index}
+              className="grid grid-cols-1 sm:grid-cols-12 gap-2 p-2.5 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 items-end shadow-xs"
+            >
+              {/* Função / Papel */}
+              <div className="sm:col-span-3">
+                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                  FUNÇÃO / CARGO #{index + 1}
+                </label>
+                <select
+                  value={author.role}
+                  onChange={(e) => handleAuthorFieldChange(index, 'role', e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:border-blue-500 focus:outline-none cursor-pointer"
+                >
+                  <option value="ELETRICISTA">ELETRICISTA</option>
+                  <option value="TÉCNICO">TÉCNICO</option>
+                  <option value="ENGENHEIRO">ENGENHEIRO</option>
+                </select>
+              </div>
+
+              {/* Nome */}
+              <div className="sm:col-span-5">
+                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                  NOME COMPLETO
+                </label>
+                <input
+                  type="text"
+                  value={author.name}
+                  onChange={(e) => handleAuthorFieldChange(index, 'name', e.target.value)}
+                  placeholder={`Nome do ${author.role.toLowerCase()}`}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Matrícula */}
+              <div className="sm:col-span-3">
+                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                  MATRÍCULA / REGISTRO
+                </label>
+                <input
+                  type="text"
+                  value={author.matricula}
+                  onChange={(e) => handleAuthorFieldChange(index, 'matricula', e.target.value)}
+                  placeholder="Nº matrícula (opcional)"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Remover (se mais de 1) */}
+              <div className="sm:col-span-1 flex justify-end">
+                {authors.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAuthor(index)}
+                    title="Remover autor"
+                    className="p-1.5 rounded text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/60 transition cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-800"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <div className="w-8 h-8" />
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

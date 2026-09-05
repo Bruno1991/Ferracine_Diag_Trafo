@@ -203,10 +203,12 @@ export default function App() {
   // Initial Diagnostic Data
   const [initialData, setInitialData] = useState<InitialDiagnosticData>({
     concessionaria: 'Energisa',
+    equipe: '',
     locationName: '',
     cityState: '',
     dateTime: '',
     utm: null,
+    authors: [{ id: '1', role: 'ELETRICISTA', name: '', matricula: '' }],
     electrician1Name: '',
     electrician1Matricula: '',
     electrician2Name: '',
@@ -382,18 +384,27 @@ export default function App() {
 
   function getReportBlockers(): string[] {
     const blockers: string[] = [];
-    if (!initialData.electrician1Name.trim()) blockers.push('informe o nome do eletricista 1');
-    if (!initialData.electrician1Matricula.trim()) blockers.push('informe a matrícula do eletricista 1');
-    if (initialData.electrician2Name && !initialData.electrician2Matricula?.trim()) blockers.push('informe a matrícula do eletricista 2');
-    if (!initialData.cityState.trim()) blockers.push('informe cidade/estado');
-    if (!initialData.transformerTag.trim()) blockers.push('informe a TAG do transformador');
-    if (!initialData.dateTime.trim()) blockers.push('informe data e hora');
+
+    // Pelo menos um responsável técnico / eletricista informado
+    const hasAuthor = (initialData.authors && initialData.authors.some((a) => a.name.trim())) ||
+      Boolean(initialData.electrician1Name?.trim());
+    if (!hasAuthor) {
+      blockers.push('informe pelo menos um técnico ou eletricista responsável');
+    }
+
+    // Transformador com dados básicos
     if (!selectedTransformer.id || selectedTransformer.powerKva <= 0 || selectedTransformer.primaryVoltageV <= 0 || selectedTransformer.secondaryVoltageV <= 0) {
-      blockers.push('selecione ou preencha um transformador valido');
+      blockers.push('selecione ou preencha um transformador com potência e tensões nominais válidas');
     }
-    if (!analysis.dataQuality.canIssueReport) {
-      blockers.push('registre tres medicoes completas e corrija as inconsistencias criticas');
+
+    // Pelo menos 1 medição preenchida ou registrada (1, 2 ou 3 testes permitidos)
+    const hasAtLeastOneMeasurement = measurements.some((m) =>
+      m.isRecorded || m.van > 0 || m.vab > 0 || m.ia > 0
+    );
+    if (!hasAtLeastOneMeasurement) {
+      blockers.push('preencha ou registre pelo menos uma medição de campo (seja 1, 2 ou 3)');
     }
+
     return blockers;
   }
 
@@ -402,10 +413,12 @@ export default function App() {
     void clearDiagnosticDraft().catch((error) => console.warn('Nao foi possivel limpar o rascunho.', error));
     setInitialData({
       concessionaria: 'Energisa',
+      equipe: '',
       locationName: '',
       cityState: '',
       dateTime: '',
       utm: null,
+      authors: [{ id: '1', role: 'ELETRICISTA', name: '', matricula: '' }],
       electrician1Name: '',
       electrician1Matricula: '',
       electrician2Name: '',

@@ -124,9 +124,9 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   };
 
   const handleSaveMeas1 = () => {
-    const missing = getMissingMeasurementFields(measurements[0], selectedTransformer);
-    if (missing.length > 0) {
-      alert(`Complete a 1ª medição antes de registrar: ${missing.join(', ')}.`);
+    const hasVoltage = measurements[0].van > 0 || measurements[0].vab > 0;
+    if (!hasVoltage) {
+      alert('Informe ao menos os valores de tensão para registrar a 1ª medição.');
       return;
     }
     const timestamp = new Date().toLocaleTimeString();
@@ -142,9 +142,9 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   };
 
   const handleSaveMeas2 = () => {
-    const missing = getMissingMeasurementFields(measurements[1], selectedTransformer);
-    if (missing.length > 0) {
-      alert(`Complete a 2ª medição antes de registrar: ${missing.join(', ')}.`);
+    const hasVoltage = measurements[1].van > 0 || measurements[1].vab > 0;
+    if (!hasVoltage) {
+      alert('Informe ao menos os valores de tensão para registrar a 2ª medição.');
       return;
     }
     const timestamp = new Date().toLocaleTimeString();
@@ -160,9 +160,9 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   };
 
   const handleSaveMeas3 = () => {
-    const missing = getMissingMeasurementFields(measurements[2], selectedTransformer);
-    if (missing.length > 0) {
-      alert(`Complete a 3ª medição antes de registrar: ${missing.join(', ')}.`);
+    const hasVoltage = measurements[2].van > 0 || measurements[2].vab > 0;
+    if (!hasVoltage) {
+      alert('Informe ao menos os valores de tensão para registrar a 3ª medição.');
       return;
     }
     const timestamp = new Date().toLocaleTimeString();
@@ -200,10 +200,10 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-              3. MEDIÇÕES TEMPORIZADAS (3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEGUNDOS' : '10 MINUTOS'})
+              3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEGUNDOS' : '10 MINUTOS'})
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões fase-neutro, fase-fase e correntes para diagnóstico contínuo
+              Coleta de tensões e correntes — você pode emitir o laudo técnico com quantas medições quiser (1, 2 ou 3)
             </p>
             {cycleMode === '5s' && (
               <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
@@ -472,6 +472,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                     ? `Aguardando intervalo de ${cycleMode === '5s' ? '5 seg' : `${intervalMinutes} min`}...`
                     : 'Registre a 1ª medição para iniciar o cronômetro.'}
                 </p>
+                <button
+                  type="button"
+                  onClick={handleBypassTimer1}
+                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 cursor-pointer shadow-xs transition"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>DESBLOQUEAR AGORA (PULAR INTERVALO)</span>
+                </button>
               </div>
             ) : (
               <>
@@ -673,6 +681,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                     ? `Aguardando intervalo de ${cycleMode === '5s' ? '5 seg' : `${intervalMinutes} min`} para a 3ª medição...`
                     : 'Registre a 2ª medição para liberar o timer final.'}
                 </p>
+                <button
+                  type="button"
+                  onClick={handleBypassTimer2}
+                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 cursor-pointer shadow-xs transition"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>DESBLOQUEAR AGORA (PULAR INTERVALO)</span>
+                </button>
               </div>
             ) : (
               <>

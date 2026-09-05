@@ -139,12 +139,16 @@ export async function generateTransformerDiagnosticPdf({
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(51, 65, 85);
-    doc.text(`Data: ${initialData.dateTime || new Date().toLocaleString()}`, pageWidth - margin, 8.5, { align: 'right' });
+    if (initialData.dateTime?.trim()) {
+      doc.text(`Data: ${initialData.dateTime.trim()}`, pageWidth - margin, 8.5, { align: 'right' });
+    }
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`TAG: ${initialData.transformerTag || 'N/A'}`, pageWidth - margin, 14, { align: 'right' });
+    if (initialData.transformerTag?.trim()) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`TAG: ${initialData.transformerTag.trim()}`, pageWidth - margin, 14, { align: 'right' });
+    }
 
     // Header Bottom Accent & Border
     doc.setFillColor(2, 132, 199); // sky-600 accent line
@@ -173,10 +177,63 @@ export async function generateTransformerDiagnosticPdf({
 
   let currentY = 28;
 
-  // Block 1: Identificação do Local e Técnico
+  // Block 1: Identificação do Local e Técnico (Apenas campos preenchidos são impressos)
+  const idRows: Array<{ left: string; right?: string }> = [];
+
+  // 1. Autores (Técnicos e/ou Eletricistas)
+  const filledAuthors = (initialData.authors && initialData.authors.length > 0)
+    ? initialData.authors.filter((a) => a.name && a.name.trim())
+    : [
+        ...(initialData.electrician1Name?.trim() ? [{ role: 'ELETRICISTA', name: initialData.electrician1Name.trim(), matricula: initialData.electrician1Matricula?.trim() || '' }] : []),
+        ...(initialData.electrician2Name?.trim() ? [{ role: 'ELETRICISTA', name: initialData.electrician2Name.trim(), matricula: initialData.electrician2Matricula?.trim() || '' }] : [])
+      ];
+
+  if (filledAuthors.length > 0) {
+    filledAuthors.forEach((author) => {
+      const left = `${author.role}: ${author.name}`;
+      const right = author.matricula?.trim() ? `Matrícula: ${author.matricula.trim()}` : undefined;
+      idRows.push({ left, right });
+    });
+  }
+
+  // 2. Equipe
+  if (initialData.equipe?.trim()) {
+    idRows.push({ left: `Equipe: ${initialData.equipe.trim()}` });
+  }
+
+  // 3. Concessionária e TAG
+  const conc = initialData.concessionaria?.trim();
+  const tag = initialData.transformerTag?.trim();
+  if (conc || tag) {
+    idRows.push({
+      left: conc ? `Concessionária: ${conc}` : (tag ? `TAG / Nº Trafo: ${tag}` : ''),
+      right: (conc && tag) ? `TAG / Nº Trafo: ${tag}` : undefined
+    });
+  }
+
+  // 4. Local e Cidade/Estado
+  const loc = initialData.locationName?.trim();
+  const city = initialData.cityState?.trim();
+  if (loc || city) {
+    if (loc && city) {
+      idRows.push({ left: `Local: ${loc} (${city})` });
+    } else if (loc) {
+      idRows.push({ left: `Local: ${loc}` });
+    } else {
+      idRows.push({ left: `Cidade / Estado: ${city}` });
+    }
+  }
+
+  // 5. Coordenadas UTM e Geográficas (Apenas se preenchidas / adquiridas)
+  if (initialData.utm && (initialData.utm.latitude !== 0 || initialData.utm.easting !== 0)) {
+    const u = initialData.utm;
+    const utmText = `UTM: [ ${u.zone || '23K'} ${Math.round(u.easting)} ${Math.round(u.northing)} ]`;
+    const geoText = `GPS: [ ${u.latitude.toFixed(6)}, ${u.longitude.toFixed(6)} ]`;
+    idRows.push({ left: utmText, right: geoText });
+  }
+
+  const block1Height = Math.max(18, 10 + idRows.length * 6.2);
   doc.setFillColor(248, 250, 252);
-  const hasElec2 = Boolean(initialData.electrician2Name && initialData.electrician2Name.trim());
-  const block1Height = hasElec2 ? 48 : 42;
   doc.rect(margin, currentY, pageWidth - margin * 2, block1Height, 'FD');
 
   doc.setFont('helvetica', 'bold');
@@ -188,76 +245,86 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
 
-  let lineY = currentY + 12;
-  doc.text(`Eletricista 1: ${initialData.electrician1Name || 'Não Informado'}`, margin + 4, lineY);
-  doc.text(`Matrícula 1: ${initialData.electrician1Matricula || 'N/A'}`, margin + 110, lineY);
-
-  if (hasElec2) {
-    lineY += 6;
-    doc.text(`Eletricista 2: ${initialData.electrician2Name}`, margin + 4, lineY);
-    doc.text(`Matrícula 2: ${initialData.electrician2Matricula || 'N/A'}`, margin + 110, lineY);
-  }
-
-  lineY += 6;
-  doc.text(`Concessionária: ${initialData.concessionaria || 'N/A'}`, margin + 4, lineY);
-  doc.text(`TAG / Nº do Trafo: ${initialData.transformerTag || 'N/A'}`, margin + 110, lineY);
-
-  lineY += 6;
-  doc.text(`Local: ${initialData.locationName || 'N/A'} (${initialData.cityState || ''})`, margin + 4, lineY);
-
-  lineY += 7;
-  // Single Box Formats for UTM and Geo Coordinates
-  let utmStr = '[ 23K 332450,25 7394820,50 ]';
-  let geoStr = '[ -23.550520, -46.633308 ]';
-
-  if (initialData.utm) {
-    const u = initialData.utm;
-    utmStr = `[ ${u.zone || '23K'} ${Math.round(u.easting)} ${Math.round(u.northing)} ]`;
-    geoStr = `[ ${u.latitude.toFixed(6)}, ${u.longitude.toFixed(6)} ]`;
-  }
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text(`UTM: ${utmStr}`, margin + 4, lineY);
-  doc.text(`Coordenadas Geográficas: ${geoStr}`, margin + 110, lineY);
+  idRows.forEach((row, idx) => {
+    const yPos = currentY + 12 + idx * 6.2;
+    doc.text(row.left, margin + 4, yPos);
+    if (row.right) {
+      doc.text(row.right, margin + 110, yPos);
+    }
+  });
 
   currentY += block1Height + 4;
 
-  // Block 2: Dados de Placa do Transformador
+  // Block 2: Dados de Placa do Transformador (Apenas campos preenchidos são impressos)
+  const specRows: Array<{ left: string; right?: string }> = [];
+
+  const catLabel = transformer.category === 'NOVO'
+    ? 'EQUIPAMENTO NOVO (NBR 5440)'
+    : 'USADO / RECONDICIONADO (NBR 10295)';
+
+  specRows.push({
+    left: `Situação: ${catLabel}`,
+    right: `Tipo de Fase: ${transformer.phaseType}`
+  });
+
+  if (transformer.powerKva > 0 || transformer.secondaryVoltageV > 0) {
+    const pwr = transformer.powerKva > 0 ? `Potência Nominal: ${transformer.powerKva} kVA` : '';
+    const volt = transformer.secondaryVoltageV > 0
+      ? `Tensão Primária / Secundária: ${transformer.primaryVoltageV ? `${transformer.primaryVoltageV / 1000} kV / ` : ''}${transformer.secondaryVoltageV}V (F-F)`
+      : undefined;
+    specRows.push({ left: pwr, right: volt });
+  }
+
+  const brand = (transformer.brand || initialData.transformerBrand)?.trim();
+  const serial = (transformer.serialNumber || initialData.serialNumber)?.trim();
+  if (brand || serial) {
+    specRows.push({
+      left: brand ? `Marca: ${brand}` : (serial ? `Nº de Série: ${serial}` : ''),
+      right: (brand && serial) ? `Nº de Série: ${serial}` : undefined
+    });
+  }
+
+  const imp = transformer.impedancePercent > 0 ? `Impedância de Placa (%Z): ${transformer.impedancePercent}%` : '';
+  const temp = transformer.oilTempC && transformer.oilTempC > 0 ? `Temperatura do Óleo (°C): ${transformer.oilTempC} °C` : undefined;
+  if (imp || temp) {
+    specRows.push({ left: imp || (temp ? temp : ''), right: imp && temp ? temp : undefined });
+  }
+
+  if (transformer.noLoadLossW > 0 || transformer.loadLoss75cW > 0) {
+    specRows.push({
+      left: transformer.noLoadLossW > 0 ? `Perdas em Vazio (P0): ${transformer.noLoadLossW} W` : '',
+      right: transformer.loadLoss75cW > 0 ? `Perdas em Carga (Pk 75°C): ${transformer.loadLoss75cW} W` : undefined
+    });
+  }
+
+  const eff = transformer.efficiencyPercent > 0 ? `Eficiência Nominal: ${transformer.efficiencyPercent}%` : '';
+  const norm = transformer.standardReference?.trim() ? `Norma: ${transformer.standardReference.trim()}` : undefined;
+  if (eff || norm) {
+    specRows.push({ left: eff || (norm ? norm : ''), right: eff && norm ? norm : undefined });
+  }
+
+  const block2Height = Math.max(18, 10 + specRows.length * 6.2);
   doc.setFillColor(248, 250, 252);
-  doc.rect(margin, currentY, pageWidth - margin * 2, 50, 'FD');
+  doc.rect(margin, currentY, pageWidth - margin * 2, block2Height, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
   doc.text('2. ESPECIFICAÇÕES NOMINAIS DA PLACA DO TRANSFORMADOR', margin + 4, currentY + 6);
 
-  const catLabel = transformer.category === 'NOVO'
-    ? 'EQUIPAMENTO NOVO (NBR 5440)'
-    : 'USADO / RECONDICIONADO (NBR 10295)';
-
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
 
-  doc.text(`Situação: ${catLabel}`, margin + 4, currentY + 14);
-  doc.text(`Tipo de Fase: ${transformer.phaseType}`, margin + 110, currentY + 14);
+  specRows.forEach((row, idx) => {
+    const yPos = currentY + 12 + idx * 6.2;
+    doc.text(row.left, margin + 4, yPos);
+    if (row.right) {
+      doc.text(row.right, margin + 110, yPos);
+    }
+  });
 
-  doc.text(`Potência Nominal: ${transformer.powerKva} kVA`, margin + 4, currentY + 21);
-  doc.text(`Tensão Primária / Secundária: ${transformer.primaryVoltageV / 1000} kV / ${transformer.secondaryVoltageV}V (F-F)`, margin + 110, currentY + 21);
-
-  doc.text(`Impedância de Placa (%Z): ${transformer.impedancePercent}%`, margin + 4, currentY + 28);
-  doc.text(`Temperatura do Óleo (°C): ${transformer.oilTempC || 65} °C`, margin + 110, currentY + 28);
-
-  doc.text(`Perdas em Vazio Nominais (P0): ${transformer.noLoadLossW} W`, margin + 4, currentY + 35);
-  doc.text(`Perdas em Carga Nominais (Pk 75°C): ${transformer.loadLoss75cW} W`, margin + 110, currentY + 35);
-
-  doc.text(`Eficiência Nominal de Placa: ${transformer.efficiencyPercent}%`, margin + 4, currentY + 42);
-  const standardReferenceLines = doc.splitTextToSize(`Norma de Referência: ${transformer.standardReference}`, 72);
-  doc.setFontSize(7.5);
-  doc.text(standardReferenceLines, margin + 110, currentY + 42);
-
-  currentY += 54;
+  currentY += block2Height + 4;
 
   // Block 3: Resumo Executivo do Diagnóstico
   doc.setFont('helvetica', 'bold');
@@ -368,9 +435,15 @@ export async function generateTransformerDiagnosticPdf({
 
   const isTri = transformer.phaseType === 'TRIFASICO';
 
-  const rowsMeas = measurements.map((m) => [
+  // Apenas medições registradas ou com dados preenchidos são exibidas (omite medições não realizadas)
+  const recordedMeas = measurements.filter((m) =>
+    m.isRecorded === true || m.van > 0 || m.vab > 0 || m.ia > 0
+  );
+  const activeMeas = recordedMeas.length > 0 ? recordedMeas : [measurements[0]];
+
+  const rowsMeas = activeMeas.map((m) => [
     `M${m.id} (T=${measurementOffset(m.id)})`,
-    m.timestamp || 'N/A',
+    m.timestamp || 'Medição Inicial',
     isTri ? `${m.van} / ${m.vbn} / ${m.vcn} V` : `${m.van} / ${m.vbn} V`,
     isTri ? `${m.vab} / ${m.vbc} / ${m.vca} V` : `${m.vab} V`,
     isTri ? `${m.ia} / ${m.ib} / ${m.ic} A (In: ${m.in || 0}A)` : `${m.ia} / ${m.ib} A (In: ${m.in || 0}A)`,
@@ -379,16 +452,29 @@ export async function generateTransformerDiagnosticPdf({
     `${m.fdtpPercent}%`
   ]);
 
-  rowsMeas.push([
-    'MÉDIA DAS ETAPAS',
-    'Média Geral',
-    isTri ? `${analysis.avgVan} / ${analysis.avgVbn} / ${analysis.avgVcn} V` : `${analysis.avgVan} / ${analysis.avgVbn} V`,
-    isTri ? `${analysis.avgVab} / ${analysis.avgVbc} / ${analysis.avgVca} V` : `${analysis.avgVab} V`,
-    isTri ? `${analysis.avgIa} / ${analysis.avgIb} / ${analysis.avgIc} A (In: ${analysis.avgIn || 0}A)` : `${analysis.avgIa} / ${analysis.avgIb} A (In: ${analysis.avgIn || 0}A)`,
-    `${analysis.avgKvaMeasured} kVA`,
-    `${analysis.avgLoadingPercent}%`,
-    `${analysis.prodist.fdtpPercent}%`
-  ]);
+  if (activeMeas.length > 1) {
+    rowsMeas.push([
+      `MÉDIA DAS ETAPAS (${activeMeas.length} MEDIÇÕES)`,
+      'Média Geral',
+      isTri ? `${analysis.avgVan} / ${analysis.avgVbn} / ${analysis.avgVcn} V` : `${analysis.avgVan} / ${analysis.avgVbn} V`,
+      isTri ? `${analysis.avgVab} / ${analysis.avgVbc} / ${analysis.avgVca} V` : `${analysis.avgVab} V`,
+      isTri ? `${analysis.avgIa} / ${analysis.avgIb} / ${analysis.avgIc} A (In: ${analysis.avgIn || 0}A)` : `${analysis.avgIa} / ${analysis.avgIb} A (In: ${analysis.avgIn || 0}A)`,
+      `${analysis.avgKvaMeasured} kVA`,
+      `${analysis.avgLoadingPercent}%`,
+      `${analysis.prodist.fdtpPercent}%`
+    ]);
+  } else {
+    rowsMeas.push([
+      'VALORES CONSOLIDADOS (1 MEDIÇÃO)',
+      'Resultado',
+      isTri ? `${analysis.avgVan} / ${analysis.avgVbn} / ${analysis.avgVcn} V` : `${analysis.avgVan} / ${analysis.avgVbn} V`,
+      isTri ? `${analysis.avgVab} / ${analysis.avgVbc} / ${analysis.avgVca} V` : `${analysis.avgVab} V`,
+      isTri ? `${analysis.avgIa} / ${analysis.avgIb} / ${analysis.avgIc} A (In: ${analysis.avgIn || 0}A)` : `${analysis.avgIa} / ${analysis.avgIb} A (In: ${analysis.avgIn || 0}A)`,
+      `${analysis.avgKvaMeasured} kVA`,
+      `${analysis.avgLoadingPercent}%`,
+      `${analysis.prodist.fdtpPercent}%`
+    ]);
+  }
 
   autoTable(doc, {
     startY: currentY,
@@ -414,7 +500,7 @@ export async function generateTransformerDiagnosticPdf({
     }
   });
 
-  // Inconsistências e anomalias exatas encontradas em cada medição
+  // Inconsistências e anomalias exatas encontradas em cada medição ativa
   // @ts-ignore
   currentY = doc.lastAutoTable.finalY + 6;
   doc.setFont('helvetica', 'bold');
@@ -422,13 +508,18 @@ export async function generateTransformerDiagnosticPdf({
   doc.setTextColor(analysis.dataQuality.status === 'INCONSISTENTE' ? 190 : 180, analysis.dataQuality.status === 'INCONSISTENTE' ? 18 : 83, analysis.dataQuality.status === 'INCONSISTENTE' ? 60 : 9);
   doc.text(`5. VALIDAÇÃO DOS DADOS: ${analysis.dataQuality.status}`, margin, currentY);
   currentY += 3;
+
+  const relevantIssues = analysis.dataQuality.issues.filter(
+    (issue) => !issue.measurementId || activeMeas.some((m) => m.id === issue.measurementId)
+  );
+
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
     head: [['Medição', 'Severidade', 'Verificação', 'Resultado exato']],
-    body: analysis.dataQuality.issues.length > 0
-      ? analysis.dataQuality.issues.map((issue) => [issue.measurementId ? `M${issue.measurementId}` : 'Bloco', issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA', issue.title, issue.message])
-      : [['Bloco', 'OK', 'Coerência', 'Nenhuma inconsistência detectada nos dados informados.']],
+    body: relevantIssues.length > 0
+      ? relevantIssues.map((issue) => [issue.measurementId ? `M${issue.measurementId}` : 'Geral', issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA', issue.title, issue.message])
+      : [['Geral', 'OK', 'Coerência', 'Nenhuma inconsistência detectada nos dados informados.']],
     theme: 'grid',
     headStyles: { fillColor: analysis.dataQuality.status === 'INCONSISTENTE' ? [190, 18, 60] : [180, 83, 9], textColor: [255, 255, 255], fontSize: 7 },
     bodyStyles: { fontSize: 6.5, cellPadding: 1.2 },
@@ -673,52 +764,105 @@ export async function generateTransformerDiagnosticPdf({
     currentY += boxHeight + 8;
   }
 
-  // Assinaturas dos Responsáveis Técnicos
-  const sigSpace = 28;
+  // Assinaturas dos Responsáveis Técnicos (Apenas autores preenchidos recebem assinatura)
+  const activeAuthors = (initialData.authors && initialData.authors.length > 0)
+    ? initialData.authors.filter((a) => a.name && a.name.trim())
+    : [
+        ...(initialData.electrician1Name?.trim() ? [{
+          role: 'ELETRICISTA',
+          name: initialData.electrician1Name.trim(),
+          matricula: initialData.electrician1Matricula?.trim() || ''
+        }] : []),
+        ...(initialData.electrician2Name?.trim() ? [{
+          role: 'ELETRICISTA',
+          name: initialData.electrician2Name.trim(),
+          matricula: initialData.electrician2Matricula?.trim() || ''
+        }] : [])
+      ];
+
+  const authorsToSign = activeAuthors.length > 0 ? activeAuthors : [
+    { role: 'RESPONSÁVEL TÉCNICO', name: 'Responsável Técnico', matricula: '' }
+  ];
+
+  const sigSpace = authorsToSign.length > 2 ? 38 : 28;
   if (currentY + sigSpace > pageHeight) {
     doc.addPage();
     currentY = 28;
     drawHeader('ASSINATURAS DOS RESPONSÁVEIS TÉCNICOS', doc.getNumberOfPages());
   }
 
-  const sigY = Math.max(currentY + 14, pageHeight - 34);
-  if (initialData.electrician2Name?.trim()) {
-    const colW = (pageWidth - 2 * margin - 15) / 2;
-    // Eletricista 1
-    doc.setDrawColor(148, 163, 184);
-    doc.line(margin + 5, sigY, margin + colW - 5, sigY);
+  // Se houver equipe preenchida, imprime o nome da equipe acima das assinaturas
+  if (initialData.equipe?.trim()) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text(initialData.electrician1Name || 'Eletricista 1', margin + colW / 2, sigY + 4.5, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, margin + colW / 2, sigY + 8.5, { align: 'center' });
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.text(`Equipe Responsável: ${initialData.equipe.trim()}`, pageWidth / 2, Math.max(currentY + 6, pageHeight - 42), { align: 'center' });
+  }
 
-    // Eletricista 2
-    const x2 = margin + colW + 15;
-    doc.line(x2 + 5, sigY, x2 + colW - 5, sigY);
+  const sigY = Math.max(currentY + 16, pageHeight - 32);
+
+  if (authorsToSign.length === 1) {
+    const a = authorsToSign[0];
+    const lineW = 90;
+    const startX = (pageWidth - lineW) / 2;
+    doc.setDrawColor(148, 163, 184);
+    doc.line(startX, sigY, startX + lineW, sigY);
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text(initialData.electrician2Name, x2 + colW / 2, sigY + 4.5, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Matrícula: ${initialData.electrician2Matricula || 'N/A'}`, x2 + colW / 2, sigY + 8.5, { align: 'center' });
+    doc.text(`${a.name} (${a.role})`, pageWidth / 2, sigY + 4.5, { align: 'center' });
+
+    if (a.matricula?.trim()) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Matrícula / Registro: ${a.matricula.trim()}`, pageWidth / 2, sigY + 8.5, { align: 'center' });
+    }
+  } else if (authorsToSign.length === 2) {
+    const colW = (pageWidth - 2 * margin - 15) / 2;
+    authorsToSign.forEach((a, i) => {
+      const x = margin + i * (colW + 15);
+      doc.setDrawColor(148, 163, 184);
+      doc.line(x + 5, sigY, x + colW - 5, sigY);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${a.name} (${a.role})`, x + colW / 2, sigY + 4.5, { align: 'center' });
+
+      if (a.matricula?.trim()) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Matrícula: ${a.matricula.trim()}`, x + colW / 2, sigY + 8.5, { align: 'center' });
+      }
+    });
   } else {
-    // Eletricista 1 único
-    doc.setDrawColor(148, 163, 184);
-    doc.line(margin + 30, sigY, pageWidth - margin - 30, sigY);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
-    doc.text(initialData.electrician1Name || 'Eletricista 1', pageWidth / 2, sigY + 4.5, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, pageWidth / 2, sigY + 8.5, { align: 'center' });
+    // 3 ou mais autores: grade responsiva
+    const numCols = Math.min(authorsToSign.length, 3);
+    const colGap = 8;
+    const colW = (pageWidth - 2 * margin - (numCols - 1) * colGap) / numCols;
+    authorsToSign.forEach((a, i) => {
+      const colIndex = i % numCols;
+      const rowIndex = Math.floor(i / numCols);
+      const rowY = sigY - (Math.floor((authorsToSign.length - 1) / numCols) - rowIndex) * 16;
+      const x = margin + colIndex * (colW + colGap);
+
+      doc.setDrawColor(148, 163, 184);
+      doc.line(x + 2, rowY, x + colW - 2, rowY);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${a.name}`, x + colW / 2, rowY + 3.5, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      const sub = a.matricula?.trim() ? `${a.role} — Matr: ${a.matricula.trim()}` : a.role;
+      doc.text(sub, x + colW / 2, rowY + 7, { align: 'center' });
+    });
   }
 
   // ==========================================
@@ -801,8 +945,9 @@ export async function generateTransformerDiagnosticPdf({
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
+      const authorsFooterStr = authorsToSign.map((a) => `${a.name}${a.matricula ? ` (Matrícula: ${a.matricula})` : ''}`).join(' | ');
       doc.text(
-        `Responsável: ${initialData.electrician1Name || 'Eletricista'} (Matrícula: ${initialData.electrician1Matricula || 'N/A'})${initialData.electrician2Name ? ` | ${initialData.electrician2Name} (Matrícula: ${initialData.electrician2Matricula || 'N/A'})` : ''}`,
+        `Responsável: ${authorsFooterStr}`,
         pageWidth / 2,
         pageHeight - 12,
         { align: 'center' }

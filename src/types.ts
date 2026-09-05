@@ -101,12 +101,23 @@ export interface UtmCoordinates {
   accuracyMeters?: number;
 }
 
+export type AuthorRole = 'ELETRICISTA' | 'TÉCNICO' | 'ENGENHEIRO' | string;
+
+export interface ReportAuthor {
+  id: string;
+  role: AuthorRole;
+  name: string;
+  matricula: string;
+}
+
 export interface InitialDiagnosticData {
   concessionaria: string;
+  equipe?: string;
   locationName: string;
   cityState: string;
   dateTime: string;
   utm: UtmCoordinates | null;
+  authors?: ReportAuthor[];
   electrician1Name: string;
   electrician1Matricula: string;
   electrician2Name?: string;
