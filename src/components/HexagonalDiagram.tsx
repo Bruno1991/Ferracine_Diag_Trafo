@@ -63,18 +63,18 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     const centerY = height / 2 - 24;
     const radius = Math.min(width, height) / 2 - 68;
 
-    // Theme Color Palette
-    const bgFill = isDark ? '#090d16' : '#ffffff';
-    const titleText = isDark ? '#f8fafc' : '#0f172a';
-    const gridAxes = isDark ? '#1e293b' : '#e2e8f0';
-    const outerHexColor = isDark ? '#334155' : '#94a3b8';
-    const innerHexColor = isDark ? '#1e293b' : '#f1f5f9';
-    const angleText = isDark ? '#64748b' : '#94a3b8';
-    const legendBg = isDark ? '#0f172a' : '#f8fafc';
-    const legendBorder = isDark ? '#1e293b' : '#e2e8f0';
-    const legendSubText = isDark ? '#94a3b8' : '#64748b';
+    // Configuração Visual: Fundo SEMPRE branco e linhas cinzas mais escuras para contraste nítido
+    const bgFill = '#ffffff';
+    const titleText = '#0f172a';
+    const gridAxes = '#475569';
+    const outerHexColor = '#1e293b';
+    const innerHexColor = '#64748b';
+    const intermediateAxes = '#94a3b8';
+    const legendBg = '#f8fafc';
+    const legendBorder = '#cbd5e1';
+    const legendSubText = '#334155';
 
-    // Background
+    // Background (Sempre Branco)
     ctx.fillStyle = bgFill;
     ctx.fillRect(0, 0, width, height);
 
@@ -92,7 +92,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
 
     // Draw Hexagonal Grid Matrix (6 axes spaced 60 deg)
     ctx.strokeStyle = gridAxes;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.2;
 
     for (let i = 0; i < 6; i++) {
       const angle = (i * Math.PI) / 3;
@@ -103,7 +103,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     }
 
     // Intermediate 30° dashed axes for phase-phase alignment
-    ctx.strokeStyle = isDark ? '#172033' : '#f1f5f9';
+    ctx.strokeStyle = intermediateAxes;
     ctx.setLineDash([2, 4]);
     for (let i = 0; i < 6; i++) {
       const angle = (i * Math.PI) / 3 + Math.PI / 6;
@@ -126,20 +126,10 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       }
       ctx.closePath();
       ctx.strokeStyle = scale === 1.0 ? outerHexColor : innerHexColor;
+      ctx.lineWidth = scale === 1.0 ? 1.5 : 1;
       ctx.setLineDash(scale === 1.0 ? [] : [3, 3]);
       ctx.stroke();
       ctx.setLineDash([]);
-    });
-
-    // Outer Hexagon Vertex Labels (0°, 60°, 120°, 180°, 240°, 300°)
-    const anglesDeg = [0, 60, 120, 180, 240, 300];
-    ctx.fillStyle = angleText;
-    ctx.font = '10px sans-serif';
-    anglesDeg.forEach((deg) => {
-      const rad = (deg * Math.PI) / 180;
-      const x = centerX + (radius + 16) * Math.cos(rad);
-      const y = centerY + (radius + 16) * Math.sin(rad) + 3;
-      ctx.fillText(`${deg}°`, x, y);
     });
 
     const hasData =
@@ -500,7 +490,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       <canvas
         ref={canvasRef}
         style={{ width: `${width}px`, height: `${height}px` }}
-        className="rounded-lg border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-950 max-w-full h-auto transition-colors duration-200"
+        className="rounded-lg border border-slate-300 shadow-sm bg-white max-w-full h-auto"
       />
     </div>
   );

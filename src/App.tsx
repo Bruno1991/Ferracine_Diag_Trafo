@@ -30,6 +30,13 @@ import {
 } from './utils/diagnosticDraft';
 import { getDeviceDateTime } from './utils/dateTimeService';
 
+export const DEFAULT_TECHNICAL_NOTES_TEMPLATE = `OCORRÊNCIA: 
+FASE ATUADA: 
+CAUSA: 
+ELO INSERIDO: 
+ELO REMOVIDO: 
+OBSERVAÇÕES: `;
+
 export default function App() {
   // Theme State (Light / Dark)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -215,7 +222,7 @@ export default function App() {
     electrician2Name: '',
     electrician2Matricula: '',
     transformerTag: '',
-    technicalNotes: ''
+    technicalNotes: DEFAULT_TECHNICAL_NOTES_TEMPLATE
   });
 
   const cleanTransformer: TransformerSpec = {
@@ -297,6 +304,43 @@ export default function App() {
   const handleRemoveMeasurement = (index: number) => {
     if (measurements.length <= 1) return;
     setMeasurements((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSetMeasurementsCount = (count: number) => {
+    if (count < 1 || count > 3) return;
+    setMeasurements((prev) => {
+      if (prev.length === count) return prev;
+      if (count < prev.length) {
+        return prev.slice(0, count);
+      }
+      const updated = [...prev];
+      while (updated.length < count) {
+        const nextId = updated.length + 1;
+        const label = `${nextId}ª Medição`;
+        const newMeas = processSingleMeasurement(
+          {
+            id: nextId,
+            label,
+            timestamp: new Date().toLocaleTimeString('pt-BR'),
+            isLocked: false,
+            isRecorded: false,
+            van: 0, vbn: 0, vcn: 0,
+            vab: 0, vbc: 0, vca: 0,
+            ia: 0, ib: 0, ic: 0, in: 0,
+            powerFactor: 0.92,
+            avgVoltagePhaseNeutral: 0,
+            avgVoltagePhasePhase: 0,
+            avgCurrent: 0,
+            totalKva: 0,
+            loadingPercent: 0,
+            fdtpPercent: 0
+          },
+          selectedTransformer
+        );
+        updated.push(newMeas);
+      }
+      return updated;
+    });
   };
 
   // Photos state (up to 5 photos)
@@ -429,7 +473,7 @@ export default function App() {
       electrician2Name: '',
       electrician2Matricula: '',
       transformerTag: '',
-      technicalNotes: ''
+      technicalNotes: DEFAULT_TECHNICAL_NOTES_TEMPLATE
     });
 
     setPhotos([]);
@@ -472,6 +516,7 @@ export default function App() {
                   handleMeasurementChange={handleMeasurementChange}
                   onAddMeasurement={handleAddMeasurement}
                   onRemoveMeasurement={handleRemoveMeasurement}
+                  onSetMeasurementsCount={handleSetMeasurementsCount}
                   analysis={analysis}
                   handleExportPdf={handleExportPdf}
                   handleExportExcel={handleExportExcel}

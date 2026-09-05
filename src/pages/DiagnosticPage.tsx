@@ -32,6 +32,7 @@ interface DiagnosticPageProps {
   handleMeasurementChange: (index: number, updated: SingleMeasurement) => void;
   onAddMeasurement?: () => void;
   onRemoveMeasurement?: (index: number) => void;
+  onSetMeasurementsCount?: (count: number) => void;
   analysis: DiagnosticAnalysis;
   handleExportPdf: () => void;
   handleExportExcel: () => void;
@@ -99,6 +100,7 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
         onChangeMeasurement={handleMeasurementChange}
         onAddMeasurement={props.onAddMeasurement}
         onRemoveMeasurement={props.onRemoveMeasurement}
+        onSetMeasurementsCount={props.onSetMeasurementsCount}
         selectedTransformer={selectedTransformer}
         cycleMode={cycleMode}
         onCycleModeChange={setCycleMode}
@@ -157,24 +159,37 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
               Campo livre para o eletricista registrar inspeções visuais de campo, anomalias, estado de conservação, ruídos, vazamento de óleo ou parecer técnico para o laudo.
             </p>
           </div>
-          <span className={`self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded border transition-colors ${
-            (initialData.technicalNotes || '').length >= 980
-              ? 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700'
-              : (initialData.technicalNotes || '').length >= 850
-              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-          }`}>
-            {(initialData.technicalNotes || '').length} / 1000 caracteres
-          </span>
+          <div className="flex items-center gap-2 self-start sm:self-center">
+            <button
+              type="button"
+              onClick={() => {
+                const template = `OCORRÊNCIA: \nFASE ATUADA: \nCAUSA: \nELO INSERIDO: \nELO REMOVIDO: \nOBSERVAÇÕES: `;
+                setInitialData({ ...initialData, technicalNotes: template });
+              }}
+              className="text-[11px] font-bold font-mono px-2 py-1 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 transition cursor-pointer"
+              title="Preencher com o modelo padrão para ocorrências de campo"
+            >
+              Inserir Modelo Padrão
+            </button>
+            <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded border transition-colors ${
+              (initialData.technicalNotes || '').length >= 980
+                ? 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700'
+                : (initialData.technicalNotes || '').length >= 850
+                ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}>
+              {(initialData.technicalNotes || '').length} / 1000 caracteres
+            </span>
+          </div>
         </div>
 
         <div>
           <textarea
-            rows={5}
+            rows={7}
             maxLength={1000}
             value={initialData.technicalNotes || ''}
             onChange={(e) => setInitialData({ ...initialData, technicalNotes: e.target.value })}
-            placeholder="Descreva aqui o parecer técnico, observações da instalação, integridade física do transformador, inspeção das buchas, testes de aterramento ou anomalias encontradas durante a medição (limite de 1000 caracteres)..."
+            placeholder="OCORRÊNCIA: &#10;FASE ATUADA: &#10;CAUSA: &#10;ELO INSERIDO: &#10;ELO REMOVIDO: &#10;OBSERVAÇÕES: "
             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md p-3 text-xs sm:text-sm text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-900 focus:border-blue-500 focus:outline-none transition resize-y"
           />
         </div>

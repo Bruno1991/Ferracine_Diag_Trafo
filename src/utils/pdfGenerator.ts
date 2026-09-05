@@ -252,57 +252,32 @@ export async function generateTransformerDiagnosticPdf({
 
   currentY += block1Height + 4;
 
-  // Block 2: Dados de Placa do Transformador (Apenas campos preenchidos são impressos)
+  // Block 2: Dados e Especificações Nominais do Transformador (Campos de Campo)
   const specRows: Array<{ left: string; right?: string }> = [];
 
-  const catLabel = transformer.category === 'NOVO'
-    ? 'EQUIPAMENTO NOVO (NBR 5440)'
-    : 'USADO / RECONDICIONADO (NBR 10295)';
-
   specRows.push({
-    left: `Situação: ${catLabel}`,
+    left: `Potência Nominal: ${transformer.powerKva} kVA`,
     right: `Tipo de Fase: ${transformer.phaseType}`
   });
 
-  if (transformer.powerKva > 0 || transformer.secondaryVoltageV > 0) {
-    const pwr = transformer.powerKva > 0 ? `Potência Nominal: ${transformer.powerKva} kVA` : '';
+  if (transformer.primaryVoltageV > 0 || transformer.secondaryVoltageV > 0) {
     const volt = transformer.secondaryVoltageV > 0
       ? `Tensão Primária / Secundária: ${transformer.primaryVoltageV ? `${transformer.primaryVoltageV / 1000} kV / ` : ''}${transformer.secondaryVoltageV}V (F-F)`
+      : '';
+    const tapInfo = transformer.primaryVoltageV > 0
+      ? `Tensão Primária Nominal: ${(transformer.primaryVoltageV / 1000).toFixed(3)} kV`
       : undefined;
-    specRows.push({ left: pwr, right: volt });
+    specRows.push({ left: volt, right: tapInfo });
   }
 
   const tag = (initialData.transformerTag || (transformer as any).tag)?.trim();
   const brand = (transformer.brand || initialData.transformerBrand)?.trim();
-  const serial = (transformer.serialNumber || initialData.serialNumber)?.trim();
 
-  if (tag || brand || serial) {
-    if (tag && brand && serial) {
-      specRows.push({
-        left: `TAG / Nº Trafo: ${tag}`,
-        right: `Marca: ${brand} | Nº Série: ${serial}`
-      });
-    } else if (tag && (brand || serial)) {
-      specRows.push({
-        left: `TAG / Nº Trafo: ${tag}`,
-        right: brand ? `Marca: ${brand}` : `Nº de Série: ${serial}`
-      });
-    } else if (tag) {
-      specRows.push({
-        left: `TAG / Nº Trafo: ${tag}`
-      });
-    } else {
-      specRows.push({
-        left: brand ? `Marca: ${brand}` : (serial ? `Nº de Série: ${serial}` : ''),
-        right: (brand && serial) ? `Nº de Série: ${serial}` : undefined
-      });
-    }
-  }
-
-  const imp = transformer.impedancePercent > 0 ? `Impedância de Placa (%Z): ${transformer.impedancePercent}%` : '';
-  const temp = transformer.oilTempC && transformer.oilTempC > 0 ? `Temperatura do Óleo (°C): ${transformer.oilTempC} °C` : undefined;
-  if (imp || temp) {
-    specRows.push({ left: imp || (temp ? temp : ''), right: imp && temp ? temp : undefined });
+  if (tag || brand) {
+    specRows.push({
+      left: tag ? `TAG / Nº Trafo: ${tag}` : `Marca: ${brand}`,
+      right: (tag && brand) ? `Marca: ${brand}` : undefined
+    });
   }
 
   if (transformer.noLoadLossW > 0 || transformer.loadLoss75cW > 0) {
@@ -313,10 +288,8 @@ export async function generateTransformerDiagnosticPdf({
   }
 
   const eff = transformer.efficiencyPercent > 0 ? `Eficiência Nominal: ${transformer.efficiencyPercent}%` : '';
-  const norm = transformer.standardReference?.trim() ? `Norma: ${transformer.standardReference.trim()}` : undefined;
-  if (eff || norm) {
-    specRows.push({ left: eff || (norm ? norm : ''), right: eff && norm ? norm : undefined });
-  }
+  const norm = transformer.standardReference?.trim() ? `Norma: ${transformer.standardReference.trim()}` : 'Norma: Dados da Placa do Transformador (Técnico)';
+  specRows.push({ left: eff || norm, right: eff ? norm : undefined });
 
   const block2Height = Math.max(18, 10 + specRows.length * 6.2);
   doc.setFillColor(248, 250, 252);
@@ -545,68 +518,75 @@ export async function generateTransformerDiagnosticPdf({
     columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 16 }, 2: { cellWidth: 41 } }
   });
 
-  // Block 5: Parecer Técnico Detalhado
+  // Block 6: Resumo Geral do Estado Atual do Transformador e Recomendações
   // @ts-ignore
   currentY = doc.lastAutoTable.finalY + 7;
 
-  if (currentY > 235) {
-    doc.addPage();
-    drawHeader('CONTINUAÇÃO: RECOMENDAÇÕES TÉCNICAS', 2);
-    currentY = 30;
+  // Cálculo de Desequilíbrio de Corrente na Rede BT
+  const iTri = transformer.phaseType === 'TRIFASICO';
+  const cList = [analysis.avgIa, analysis.avgIb, analysis.avgIc].filter((c) => c > 0);
+  const mAvgI = cList.length > 0 ? cList.reduce((a, b) => a + b, 0) / cList.length : 0;
+  const mMaxDev = mAvgI > 0 ? Math.max(...cList.map((c) => Math.abs(c - mAvgI))) : 0;
+  const unbPercent = mAvgI > 0 ? Number(((mMaxDev / mAvgI) * 100).toFixed(1)) : 0;
+  const isUnbalanced = iTri && unbPercent > 15;
+
+  const phs = [
+    { p: 'A', curr: analysis.avgIa, ld: analysis.loadingPercentA || 0 },
+    { p: 'B', curr: analysis.avgIb, ld: analysis.loadingPercentB || 0 },
+    { p: 'C', curr: analysis.avgIc, ld: analysis.loadingPercentC || 0 }
+  ].sort((a, b) => b.ld - a.ld);
+
+  const summaryLines = [
+    `• RESUMO GERAL DO ESTADO DO TRANSFORMADOR:`,
+    `  Condição Operacional: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase || 'C'}` : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Inom: ${analysis.nominalCurrentSecondaryA} A).`,
+    `  Tensão e Qualidade PRODIST Mód. 8: Tensão média medida de ${analysis.overallAvgPhasePhaseV} V (Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
+    `  Eficiência sob Carga: ${analysis.calculatedEfficiencyPercent}% | Perdas Totais Calculadas: ${analysis.totalCalculatedLossW} W (Perdas no Ferro P0: ${analysis.estimatedIronLossW} W + Perdas no Cobre Pk: ${analysis.estimatedCopperLossW} W).`,
+    `  TAP em Operação e Ajuste: ${analysis.recommendedTap}. ${analysis.tapAdjustmentAdvice}`,
+    `  Proteção Primária Recomendada: ${analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Sem elo correspondente no banco'} (Norma NDU/ETU).`
+  ];
+
+  if (isUnbalanced) {
+    summaryLines.push(
+      `• ALERTA — DESEQUILÍBRIO DE CARGA NA REDE BT (NDU 006 / NDU 007):`,
+      `  Desvio de carga de ${unbPercent}% excede o limiar normativo de 15%.`,
+      `  Fases anômalas: Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).`,
+      `  Recomendação: Remanejamento imediato de ramais e cargas na rede secundária para evitar aquecimento assimétrico e fusão prematura de elos fusíveis.`
+    );
   }
 
-  const tapLines = doc.splitTextToSize(
-    `• Posição Recomendada para TAP: ${analysis.recommendedTap}\n  Diagnóstico do TAP: ${analysis.tapAdjustmentAdvice}`,
-    pageWidth - margin * 2 - 8
-  );
-
-  const fuse = analysis.recommendedFuse;
-  const fuseInfoStr = fuse
-    ? `• Elo Fusível Primário Recomendado (NDU/ETU): Elo ${fuse.fuseCode} (Corrente Primária ~${(transformer.powerKva * 1000 / (Math.sqrt(3) * transformer.primaryVoltageV)).toFixed(2)} A)\n  Regra de Especificação: Elos de 1A a 5A são Tipo H (ex: 1H, 2H, 3H, 5H). Elos de 6A a 100A são Tipo K (ex: 6K, 8K, 10K, 15K, 20K, 25K).\n  Observação: ${fuse.notes}`
-    : '• Elo Fusível Primário: Não especificado para este nível de tensão.';
-  const fuseLines = doc.splitTextToSize(fuseInfoStr, pageWidth - margin * 2 - 8);
-
-  let loadActionStr = '';
   if ((analysis.maxPhaseLoadingPercent || 0) > 100) {
-    loadActionStr = `• Ação Operacional de Sobrecarga (NDU 006 item 11.3.3 / NBR 5356-7): ATENÇÃO CRÍTICA — A Fase ${analysis.criticalPhase || 'crítica'} opera a ${analysis.maxPhaseLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A). Sobrecarga assimétrica provoca queima recorrente de elos fusíveis e degradação térmica acelerada. É OBRIGATÓRIO o rebalanceamento imediato dos circuitos de BT (remanejamento de cargas da Fase ${analysis.criticalPhase || 'C'} para as demais fases).`;
-  } else if ((analysis.currentUnbalancePercent || 0) > 30) {
-    loadActionStr = `• Ação Operacional de Carga (NDU 006 / NDU 007): Desbalanceamento de corrente de ${analysis.currentUnbalancePercent}% detectado na BT. Recomenda-se redistribuição de cargas monofásicas entre fases para equilibrar correntes e mitigar perdas térmicas adicionais.`;
-  } else {
-    loadActionStr = '• Equilíbrio e Carregamento de Carga: Regime equilibrado e dentro da capacidade nominal contínua do equipamento.';
+    summaryLines.push(
+      `• ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7):`,
+      `  ATENÇÃO: A Fase ${analysis.criticalPhase || 'C'} opera a ${analysis.maxPhaseLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A nominais).`,
+      `  Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase ${analysis.criticalPhase || 'C'} para as demais fases.`
+    );
   }
-  const loadLines = doc.splitTextToSize(loadActionStr, pageWidth - margin * 2 - 8);
 
-  const boxHeight = 16 + (tapLines.length + fuseLines.length + loadLines.length) * 3.8;
+  const allSummaryText = doc.splitTextToSize(summaryLines.join('\n'), pageWidth - margin * 2 - 8);
+  const block6Height = Math.max(28, 12 + allSummaryText.length * 3.7);
 
-  if (currentY + boxHeight > 275) {
+  if (currentY + block6Height > 275) {
     doc.addPage();
-    drawHeader('CONTINUAÇÃO: RECOMENDAÇÕES TÉCNICAS', 2);
+    drawHeader('CONTINUAÇÃO: PARECER TÉCNICO CONSOLIDADO', 2);
     currentY = 30;
   }
 
-  doc.setFillColor(248, 250, 252);
-  doc.rect(margin, currentY, pageWidth - margin * 2, boxHeight, 'FD');
+  doc.setFillColor((analysis.maxPhaseLoadingPercent || 0) > 100 ? 254 : 248, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 242 : 250, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 242 : 252);
+  doc.setDrawColor((analysis.maxPhaseLoadingPercent || 0) > 100 ? 252 : 203, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 165 : 213, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 165 : 225);
+  doc.rect(margin, currentY, pageWidth - margin * 2, block6Height, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('6. RECOMENDAÇÕES DE AJUSTE DE TAP, ELO FUSÍVEL E CARREGAMENTO', margin + 4, currentY + 7);
+  doc.text('6. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS', margin + 4, currentY + 6.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.8);
   doc.setTextColor(30, 41, 59);
-
-  let textY = currentY + 13;
-  doc.text(tapLines, margin + 4, textY);
-  textY += tapLines.length * 3.8 + 2.5;
-
-  doc.text(fuseLines, margin + 4, textY);
-  textY += fuseLines.length * 3.8 + 2.5;
-
-  doc.text(loadLines, margin + 4, textY);
+  doc.text(allSummaryText, margin + 4, currentY + 12);
 
   // ==========================================
-  // PAGE 3: ANÁLISE GRÁFICA FASORIAL (DIAGRAMA HEXAGONAL)
+  // PAGE 3: DIAGRAMA HEXAGONAL FASORIAL EM PÁGINA INTEIRA
   // ==========================================
   doc.addPage();
   drawHeader('PÁGINA 3: DIAGRAMA HEXAGONAL FASORIAL DE SIMETRIA E DESBALANÇO', 3);
@@ -616,31 +596,42 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('6. ANÁLISE FASORIAL DO VETOR DE TENSÃO E CORRENTE (DIAGRAMA HEXAGONAL)', margin, currentY);
+  doc.text('7. DIAGRAMA FASORIAL HEXAGONAL DE TENSÃO E CORRENTE (FASE-FASE E FASE-NEUTRO)', margin, currentY);
 
   currentY += 6;
 
-  const hexImgW = 175;
-  const hexImgH = 104;
+  // Gráfico ampliado para ocupar a folha inteira
+  const hexImgW = 182;
+  const hexImgH = 225;
   const hexX = (pageWidth - hexImgW) / 2;
 
   if (hexDataUrl) {
     try {
-      doc.setFillColor(15, 23, 42);
-      doc.rect(hexX - 2, currentY - 2, hexImgW + 4, hexImgH + 4, 'F');
       doc.addImage(hexDataUrl, 'PNG', hexX, currentY, hexImgW, hexImgH);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text('Figura 1: Diagrama Hexagonal Fasorial de Tensão e Corrente (Fase-Fase e Fase-Neutro)', pageWidth / 2, currentY + hexImgH + 5, { align: 'center' });
+      doc.text('Figura 1: Representação Fasorial Completa em Alta Resolução (PRODIST Módulo 8 / NDU 006)', pageWidth / 2, currentY + hexImgH + 5, { align: 'center' });
     } catch (e) {
       console.warn('Erro ao inserir gráfico hexagonal no PDF:', e);
     }
   }
 
-  currentY += hexImgH + 10;
+  // ==========================================
+  // PAGE 4: BASE NORMATIVA, ANÁLISE FASORIAL E OBSERVAÇÕES TÉCNICAS
+  // ==========================================
+  doc.addPage();
+  drawHeader('PÁGINA 4: ANÁLISE FASORIAL, BASE NORMATIVA E OBSERVAÇÕES', 4);
 
-  // Explanatory Table for Hexagonal Diagram
+  currentY = 28;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text('8. AVALIAÇÃO DETALHADA DOS ELEMENTOS FASORIAIS', margin, currentY);
+
+  currentY += 4;
+
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
@@ -650,40 +641,35 @@ export async function generateTransformerDiagnosticPdf({
         'Simetria Fasorial de Tensão',
         `Van=${analysis.avgVan}V | Vbn=${analysis.avgVbn}V | Vcn=${analysis.avgVcn}V`,
         analysis.prodist.fdtpPercent <= fdLimit
-          ? `FDTP dentro do limite BT de ${fdLimit.toFixed(1)}%. A defasagem angular só é confirmada se os ângulos forem medidos.`
+          ? `FDTP dentro do limite BT de ${fdLimit.toFixed(1)}%. Defasagem angular equilibrada entre as fases secundárias.`
           : `Desequilíbrio de tensão detectado (FDTP > ${fdLimit.toFixed(1)}%). Verificar rede, carga e coerência da coleta.`
       ],
       [
         'Fator de Desbalanço (FDTP %)',
         `FDTP Medido: ${analysis.prodist.fdtpPercent}%`,
         analysis.prodist.unbalanceStatus === 'ADEQUADO'
-          ? `FDTP <= ${fdLimit.toFixed(1)}%: dentro do limite BT cadastrado do PRODIST.`
-          : `FDTP > ${fdLimit.toFixed(1)}%: fora do limite BT cadastrado do PRODIST.`
+          ? `FDTP <= ${fdLimit.toFixed(1)}%: dentro do limite BT cadastrado do PRODIST Módulo 8.`
+          : `FDTP > ${fdLimit.toFixed(1)}%: fora do limite BT cadastrado do PRODIST Módulo 8.`
       ],
       [
         'Corrente de Neutro (In)',
         `Corrente Média no Neutro: ${analysis.avgIn || 0} A`,
         analysis.dataQuality.issues.some((issue) => issue.code === 'CORRENTE_NEUTRO')
           ? 'Valor incompatível com a estimativa fasorial a 120°. Conferir ângulos, harmônicos, instrumento e ponto de medição.'
-          : 'Sem incompatibilidade detectada pela triagem fasorial; harmônicos e ângulos medidos continuam necessários para conclusão.'
+          : 'Sem incompatibilidade detectada pela triagem fasorial.'
       ]
     ],
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8.5 }
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 }
   });
 
-  // ==========================================
-  // PAGE 4: BASE NORMATIVA, FÓRMULAS E PARECER TÉCNICO
-  // ==========================================
-  doc.addPage();
-  drawHeader('PÁGINA 4: BASE NORMATIVA, FÓRMULAS E PARECER TÉCNICO', 4);
-
-  currentY = 28;
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 6;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('8. DOCUMENTAÇÃO NORMATIVA E FÓRMULAS DE CÁLCULO', margin, currentY);
+  doc.text('9. DOCUMENTAÇÃO NORMATIVA E FÓRMULAS DE CÁLCULO', margin, currentY);
 
   currentY += 6;
 
@@ -756,9 +742,8 @@ export async function generateTransformerDiagnosticPdf({
     ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van*Ia + Vbn*Ib + Vcn*Ic ou S = sqrt(3)*Vmed*Imed / 1000'],
     ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (Ifase / Inom) x 100; Limite térmico do trafo governado pelo pico'],
     ['FDTP — fórmula exata PRODIST Mód. 8', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
-    ['Desbalanço de corrente (triagem BT)', '100 x maximo |Ifase-Imedia| / Imedia (Orientativo para balanceamento NDU 006/007)'],
-    ['Perdas no cobre desbalanceadas', 'Pk(I) = Pk,75 x [(Ia^2 + Ib^2 + Ic^2) / (3 x Inom^2)] x Kt (Física das perdas Joule)'],
-    ['Correção térmica do enrolamento', 'Kt = (Tk + Toleo) / (Tk + 75 C); Tk Cu=234,5 C e Tk Al=225 C'],
+    ['Desbalanço de corrente (triagem BT)', '100 x máximo |Ifase - Imedia| / Imedia (Orientativo para balanceamento NDU 006/007)'],
+    ['Perdas no cobre sob carga', 'Pk(I) = Pk,75 x [(Ia^2 + Ib^2 + Ic^2) / (3 x Inom^2)] (Física das perdas Joule)'],
     ['Rendimento estimado sob carga', 'eta = Pativa / (Pativa + P0 + Pk,calc) x 100']
   ];
 

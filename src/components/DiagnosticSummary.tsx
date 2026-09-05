@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, AlertOctagon, Zap, Cpu, Activity, ArrowUpRight, CheckCircle2, FileText, FileSpreadsheet } from 'lucide-react';
+import { ShieldCheck, AlertOctagon, Cpu, Activity } from 'lucide-react';
 import { DiagnosticAnalysis, TransformerSpec, InitialDiagnosticData } from '../types';
 
 interface DiagnosticSummaryProps {
@@ -12,15 +12,30 @@ interface DiagnosticSummaryProps {
 
 export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
   analysis,
-  transformer,
-  initialData,
-  onExportPdf,
-  onExportExcel
+  transformer
 }) => {
   const isAmedir = analysis.overallAvgPhasePhaseV === 0;
   const isAdequate = !isAmedir && analysis.prodist.voltageStatus === 'ADEQUADA';
   const isPrecarious = !isAmedir && analysis.prodist.voltageStatus === 'PRECARIA';
   const isCritical = !isAmedir && analysis.prodist.voltageStatus === 'CRITICA';
+
+  // Cálculo do Desequilíbrio de Carga entre as Fases (NDU 006 / NDU 007)
+  const isTri = transformer.phaseType === 'TRIFASICO';
+  const currents = [analysis.avgIa, analysis.avgIb, analysis.avgIc].filter((c) => c > 0);
+  const avgI = currents.length > 0 ? currents.reduce((a, b) => a + b, 0) / currents.length : 0;
+  const maxDev = avgI > 0 ? Math.max(...currents.map((c) => Math.abs(c - avgI))) : 0;
+  const unbalancePercent = avgI > 0 ? Number(((maxDev / avgI) * 100).toFixed(1)) : 0;
+  const hasUnbalance = isTri && unbalancePercent > 15;
+
+  // Identificação das fases com maior e menor carregamento
+  const phaseList = [
+    { phase: 'A', current: analysis.avgIa, loading: analysis.loadingPercentA },
+    { phase: 'B', current: analysis.avgIb, loading: analysis.loadingPercentB },
+    { phase: 'C', current: analysis.avgIc, loading: analysis.loadingPercentC }
+  ];
+  const sortedByLoad = [...phaseList].sort((a, b) => (b.loading || 0) - (a.loading || 0));
+  const worstPhase = sortedByLoad[0];
+  const lowestPhase = sortedByLoad[sortedByLoad.length - 1];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-3">
@@ -75,29 +90,31 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       )}
 
-      {/* Phase Specific Validation Alerts */}
-      {analysis.phaseAlerts && analysis.phaseAlerts.length > 0 && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-3 rounded-lg space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider">
-            <AlertOctagon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span>ALERTAS DE VALIDAÇÃO DE FASE ({analysis.phaseTypeEvaluated})</span>
+      {/* Alerta de Desequilíbrio de Carga na Rede BT */}
+      {hasUnbalance && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-3 rounded-lg space-y-1.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider">
+            <AlertOctagon className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>ALERTA — DESEQUILÍBRIO DE CARGA NA REDE BT ({unbalancePercent}% | Limiar: 15%)</span>
           </div>
-          <div className="space-y-1.5">
-            {analysis.phaseAlerts.map((alert, idx) => (
-              <div
-                key={idx}
-                className={`p-2 rounded border text-xs font-mono font-bold flex items-start gap-2 ${
-                  alert.severity === 'CRITICAL'
-                    ? 'bg-rose-100 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
-                    : 'bg-amber-100 dark:bg-amber-900/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
-                }`}
-              >
-                <span className="shrink-0 font-bold px-1.5 py-0.5 rounded bg-white/60 dark:bg-slate-900/60 border border-current text-[10px]">
-                  {alert.type}
-                </span>
-                <span>{alert.message}</span>
-              </div>
-            ))}
+          <p className="text-xs font-mono text-amber-900 dark:text-amber-200 leading-relaxed">
+            <strong>Fases afetadas:</strong> Fase {worstPhase.phase} com maior carga ({worstPhase.current} A — {worstPhase.loading}%), Fase {lowestPhase.phase} com menor carga ({lowestPhase.current} A — {lowestPhase.loading}%). Desvio de {unbalancePercent}% excede o limiar normativo de 15%.
+          </p>
+          <p className="text-[11px] font-mono text-amber-800 dark:text-amber-300">
+            Recomenda-se remanejamento de carga entre as fases na rede secundária para mitigar aquecimento assimétrico e prevenir atuação indevida do elo fusível (NDU 006 / NDU 007).
+          </p>
+        </div>
+      )}
+
+      {/* Alerta de Sobrecarga Crítica */}
+      {(analysis.maxPhaseLoadingPercent || 0) > 100 && (
+        <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800/80 flex items-start gap-2.5">
+          <AlertOctagon className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-red-900 dark:text-red-200 leading-relaxed font-mono">
+            <div className="font-bold uppercase tracking-wider mb-0.5 text-red-700 dark:text-red-400">
+              ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7)
+            </div>
+            A Fase {analysis.criticalPhase || 'C'} opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase {analysis.criticalPhase || 'C'} para as demais fases.
           </div>
         </div>
       )}
@@ -222,51 +239,62 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       </div>
 
-      {/* Detailed Technical Guidance Box */}
-      <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-2">
-        <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+      {/* Resumo Geral do Estado Atual do Transformador */}
+      <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-3">
+        <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
           <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          <span>PARECER TÉCNICO PARA COMUTAÇÃO DE TAP E MANUTENÇÃO</span>
+          <span>RESUMO GERAL DO ESTADO ATUAL DO TRANSFORMADOR</span>
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          {/* TAP Guidance */}
-          <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div className="font-bold font-mono text-amber-800 dark:text-amber-300 mb-1 flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <span>{analysis.recommendedTap}</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          {/* Card 1: Diagnóstico Operacional */}
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+              ESTADO OPERACIONAL
             </div>
-            <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
-              {analysis.tapAdjustmentAdvice}
+            <div className={`font-bold font-mono text-sm ${
+              (analysis.maxPhaseLoadingPercent || 0) > 100
+                ? 'text-red-600 dark:text-red-400'
+                : analysis.loadingCondition === 'ELEVADO'
+                ? 'text-amber-600 dark:text-amber-400'
+                : 'text-emerald-600 dark:text-emerald-400'
+            }`}>
+              {(analysis.maxPhaseLoadingPercent || 0) > 100
+                ? `SOBRECARGA NA FASE ${analysis.criticalPhase || 'C'}`
+                : analysis.loadingCondition.replace('_', ' ')}
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+              Pico de corrente: <strong>{analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}%</strong> ({analysis.maxKvaMeasured} kVA medidos).
             </p>
           </div>
 
-          {/* Efficiency and Losses */}
-          <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div className="font-bold font-mono text-emerald-800 dark:text-emerald-300 mb-1 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Rendimento Calculado sob Carga: {analysis.calculatedEfficiencyPercent}%</span>
+          {/* Card 2: Perdas e Rendimento */}
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+              PERDAS E RENDIMENTO SOB CARGA
             </div>
-            <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
-              Perdas Totais Calculadas: <span className="font-bold text-slate-900 dark:text-slate-100">{analysis.totalCalculatedLossW} W</span> (Perdas no Ferro P0: {analysis.estimatedIronLossW} W + Perdas no Cobre Pk: {analysis.estimatedCopperLossW} W).
+            <div className="font-bold font-mono text-sm text-emerald-700 dark:text-emerald-300">
+              {analysis.calculatedEfficiencyPercent}% de Rendimento
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+              Perdas Totais: <strong>{analysis.totalCalculatedLossW} W</strong> (Ferro P0: {analysis.estimatedIronLossW} W + Cobre Pk: {analysis.estimatedCopperLossW} W).
             </p>
-            <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-1">
-              Material: <strong className="text-amber-800 dark:text-amber-300">{analysis.windingMaterial === 'COBRE' ? 'Cobre (Cu)' : 'Alumínio (Al)'}</strong> | Óleo: <strong className="text-emerald-800 dark:text-emerald-300">{analysis.oilType === 'VEGETAL' ? 'Vegetal (Éster)' : 'Mineral'}</strong> | Fab.: <strong className="text-slate-700 dark:text-slate-300">{analysis.manufacturingDate || 'N/A'}</strong>{analysis.efficiencyLevel ? <> | Eficiência: <strong className="text-blue-800 dark:text-blue-300">{String(analysis.efficiencyLevel).toUpperCase() === 'C' ? 'Nível C' : `${analysis.efficiencyLevel}%`}</strong></> : null} | Tk = {analysis.thermalConstantTk}°C | Kt = {analysis.thermalCorrectionFactorKt}
+          </div>
+
+          {/* Card 3: TAP e Proteção */}
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+              TAP & PROTEÇÃO PRIMÁRIA
+            </div>
+            <div className="font-bold font-mono text-sm text-blue-700 dark:text-blue-300">
+              {analysis.recommendedTap || 'TAP Atual'} | {analysis.recommendedFuse ? `Elo ${analysis.recommendedFuse.fuseCode}` : 'Sem elo'}
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+              {analysis.tapAdjustmentAdvice || 'Tensão secundária em conformidade.'}
             </p>
           </div>
         </div>
-
-        {/* Operational Warning for Overload / Unbalance */}
-        {(analysis.maxPhaseLoadingPercent || 0) > 100 && (
-          <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-start gap-2">
-            <AlertOctagon className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-            <div className="text-[11px] text-red-800 dark:text-red-300 leading-relaxed">
-              <strong>ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7):</strong> A Fase {analysis.criticalPhase || 'crítica'} opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase {analysis.criticalPhase || 'C'} para as demais fases.
-            </div>
-          </div>
-        )}
       </div>
-
     </div>
   );
 };
