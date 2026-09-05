@@ -98,13 +98,19 @@ export async function generateTransformerDiagnosticPdf({
   );
   const activeMeas = recordedMeas.length > 0 ? recordedMeas : [measurements[0]];
   const isInstantaneous = activeMeas.length === 1;
-  const cycleDescription = cycleMode === '5s'
+  const cycleDescription = cycleMode === '1s'
+    ? '1 segundo (Modo de Teste)'
+    : cycleMode === '5s'
     ? '5 segundos (Modo de Teste)'
+    : cycleMode === '5m'
+    ? '5 minutos'
     : isInstantaneous
       ? '10 minutos (Medição Instantânea pós-fechamento)'
       : '10 minutos (Operação de Fato)';
   const measurementOffset = (id: number) => {
+    if (cycleMode === '1s') return `${id} s`;
     if (cycleMode === '5s') return `${(id - 1) * 5} s`;
+    if (cycleMode === '5m') return `${id * 5} min`;
     if (id === 1) return '10 min pós-fechamento';
     if (id === 2) return '20 min';
     if (id === 3) return '30 min';
@@ -252,35 +258,44 @@ export async function generateTransformerDiagnosticPdf({
 
   currentY += block1Height + 4;
 
-  // Block 2: Dados Básicos do Transformador (Campos de Campo)
-  const specRows: Array<{ left: string; right?: string }> = [];
-
-  specRows.push({
-    left: `Potência Nominal: ${transformer.powerKva} kVA`,
-    right: `Tipo de Fase: ${transformer.phaseType}`
-  });
-
-  if (transformer.primaryVoltageV > 0 || transformer.secondaryVoltageV > 0) {
-    const secStr = transformer.secondaryNeutralV && transformer.secondaryNeutralV > 0
-      ? `${transformer.secondaryVoltageV}V / ${transformer.secondaryNeutralV}V`
-      : `${transformer.secondaryVoltageV}V (F-F)`;
-    const volt = `Tensão Primária / Secundária: ${transformer.primaryVoltageV ? `${transformer.primaryVoltageV / 1000} kV / ` : ''}${secStr}`;
-    const primInfo = transformer.primaryVoltageV > 0
-      ? `Tensão Primária Nominal: ${(transformer.primaryVoltageV / 1000).toFixed(3)} kV`
-      : undefined;
-    specRows.push({ left: volt, right: primInfo });
-  }
-
+  // Block 2: Dados Básicos do Transformador (Mesma Ordem do App)
   const tag = (initialData.transformerTag || (transformer as any).tag)?.trim();
   const brand = (transformer.brand || initialData.transformerBrand)?.trim();
 
-  if (tag || brand) {
-    specRows.push({
-      left: tag ? `TAG / Nº Trafo: ${tag}` : `Marca: ${brand}`,
-      right: (tag && brand) ? `Marca: ${brand}` : undefined
-    });
-  }
+  const specRows: Array<{ left: string; right?: string }> = [];
 
+  // 1. Identificação (TAG / Marca)
+  specRows.push({
+    left: `TAG / Nº Trafo: ${tag || 'Não informado'}`,
+    right: `Marca / Fabricante: ${brand || 'Não informado'}`
+  });
+
+  // 2. Local e Tipo de Fase
+  specRows.push({
+    left: `Local / Alimentador: ${loc || 'Não informado'}`,
+    right: `Tipo de Fase: ${transformer.phaseType}`
+  });
+
+  // 3. Potência Nominal e Tensão Primária
+  const primVStr = transformer.primaryVoltageV > 0
+    ? `${transformer.primaryVoltageV} V (${(transformer.primaryVoltageV / 1000).toFixed(3)} kV)`
+    : 'Não informada';
+  specRows.push({
+    left: `Potência Nominal: ${transformer.powerKva} kVA`,
+    right: `Tensão Primária: ${primVStr}`
+  });
+
+  // 4. Tensões Secundárias F-F e F-N
+  const secFfStr = transformer.secondaryVoltageV > 0 ? `${transformer.secondaryVoltageV} V` : 'Não informada';
+  const secFnStr = transformer.secondaryNeutralV && transformer.secondaryNeutralV > 0
+    ? `${transformer.secondaryNeutralV} V`
+    : 'Não informada';
+  specRows.push({
+    left: `Tensão Secundária F-F: ${secFfStr}`,
+    right: `Tensão Secundária F-N: ${secFnStr}`
+  });
+
+  // 5. Padrão de Coleta
   const norm = 'Dados Básicos Coletados em Campo (Técnico)';
   specRows.push({ left: `Padrão: ${norm}` });
 

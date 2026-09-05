@@ -373,7 +373,7 @@ export default function App() {
                   setPhotos={setPhotos}
                   theme={theme}
                   onToggleTheme={toggleTheme}
-                  onHexCanvasRendered={(url) => {
+                  onHexCanvasRendered={(url: string) => {
                     hexDataUrlRef.current = url;
                   }}
                 />

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Timer, Lock, Unlock, Play, Pause, Trash2, Clock, CheckCircle2 } from 'lucide-react';
 import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
-import { getMissingMeasurementFields, processSingleMeasurement } from '../utils/electricalCalculations';
+import { isMeasurementComplete, processSingleMeasurement } from '../utils/electricalCalculations';
 
 interface TimedMeasurementsProps {
   measurements: SingleMeasurement[];
@@ -15,6 +15,22 @@ interface TimedMeasurementsProps {
   onAllCompleted?: () => void;
 }
 
+function getCycleDurationSeconds(mode: MeasurementCycleMode): number {
+  switch (mode) {
+    case '1s': return 1;
+    case '5s': return 5;
+    case '5m': return 300;
+    case '10m': return 600;
+    default: return 600;
+  }
+}
+
+function formatTimer(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   measurements,
   onChangeMeasurement,
@@ -26,113 +42,140 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   onCycleModeChange,
   onAllCompleted
 }) => {
-  const intervalSeconds = cycleMode === '5s' ? 5 : 600;
-  const intervalMinutes = cycleMode === '5s' ? 0.0833 : 10;
+  const isTri = selectedTransformer.phaseType === 'TRIFASICO';
 
-  // Timer 0: Pós-fechamento antes de liberar a 1ª Medição
-  const hasInitialData0 = Boolean(
+  // Verifica se já existem dados pré-existentes na 1ª Medição (ex: draft restaurado)
+  const hasM1Data = Boolean(
     measurements[0]?.isRecorded ||
     (measurements[0]?.van || 0) > 0 ||
     (measurements[0]?.vab || 0) > 0 ||
     (measurements[0]?.ia || 0) > 0
   );
-  const [isMeas1Unlocked, setIsMeas1Unlocked] = useState<boolean>(hasInitialData0);
-  const [timer0Seconds, setTimer0Seconds] = useState<number>(intervalSeconds);
-  const [isTimer0Running, setIsTimer0Running] = useState<boolean>(false);
 
-  // Timer 1 (Between Meas 1 and Meas 2)
-  const [timer1Seconds, setTimer1Seconds] = useState<number>(intervalSeconds);
-  const [isTimer1Running, setIsTimer1Running] = useState<boolean>(false);
-
-  // Timer 2 (Between Meas 2 and Meas 3)
-  const [timer2Seconds, setTimer2Seconds] = useState<number>(intervalSeconds);
-  const [isTimer2Running, setIsTimer2Running] = useState<boolean>(false);
+  // Estados de liberação de cada medição (M1, M2, M3)
+  const [unlocked, setUnlocked] = useState<boolean[]>([hasM1Data, false, false]);
 
   // Se receber dados existentes posteriormente, desbloqueia a medição 1
   useEffect(() => {
-    if (hasInitialData0 && !isMeas1Unlocked) {
-      setIsMeas1Unlocked(true);
+    if (hasM1Data && !unlocked[0]) {
+      setUnlocked((prev) => [true, prev[1], prev[2]]);
     }
-  }, [hasInitialData0]);
+  }, [hasM1Data]);
 
-  // Effect for Timer 0 (Pós-fechamento do Trafo)
+  // Cronômetro Central
+  // countdownTarget: 0 para M1 (pós-fechamento), 1 para M2, 2 para M3, ou null se nenhum ativo
+  const [countdownTarget, setCountdownTarget] = useState<number | null>(hasM1Data ? null : 0);
+  const [timerSeconds, setTimerSeconds] = useState<number>(() => getCycleDurationSeconds(cycleMode));
+  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
+
+  // Quando o usuário altera o ciclo e o timer não estiver rodando, ajusta os segundos
+  const prevCycleModeRef = useRef<MeasurementCycleMode>(cycleMode);
+  useEffect(() => {
+    if (prevCycleModeRef.current !== cycleMode) {
+      prevCycleModeRef.current = cycleMode;
+      if (!isTimerRunning) {
+        setTimerSeconds(getCycleDurationSeconds(cycleMode));
+      }
+    }
+  }, [cycleMode, isTimerRunning]);
+
+  // Efeito do Contador Regressivo
   useEffect(() => {
     let interval: any = null;
-    if (isTimer0Running && timer0Seconds > 0) {
+    if (isTimerRunning && timerSeconds > 0) {
       interval = setInterval(() => {
-        setTimer0Seconds((prev) => prev - 1);
+        setTimerSeconds((prev) => prev - 1);
       }, 1000);
-    } else if (timer0Seconds === 0 && isTimer0Running) {
-      setIsTimer0Running(false);
-      setIsMeas1Unlocked(true);
-    }
-    return () => clearInterval(interval);
-  }, [isTimer0Running, timer0Seconds]);
+    } else if (isTimerRunning && timerSeconds <= 0) {
+      setIsTimerRunning(false);
+      if (countdownTarget !== null) {
+        // Desbloqueia a medição alvo
+        const target = countdownTarget;
+        setUnlocked((prev) => {
+          const updated = [...prev];
+          updated[target] = true;
+          return updated;
+        });
+        setCountdownTarget(null);
 
-  // Effect for Timer 1
-  useEffect(() => {
-    let interval: any = null;
-    if (isTimer1Running && timer1Seconds > 0) {
-      interval = setInterval(() => {
-        setTimer1Seconds((prev) => prev - 1);
-      }, 1000);
-    } else if (timer1Seconds === 0 && isTimer1Running) {
-      setIsTimer1Running(false);
-      // Unlock Measurement 2
-      if (measurements[1]) {
-        const updatedMeas2 = {
-          ...measurements[1],
-          isLocked: false
-        };
-        onChangeMeasurement(1, updatedMeas2);
+        // Se desbloqueou M2 ou M3, garante que isLocked fique false na medição
+        if (measurements[target]) {
+          onChangeMeasurement(target, {
+            ...measurements[target],
+            isLocked: false
+          });
+        }
       }
     }
     return () => clearInterval(interval);
-  }, [isTimer1Running, timer1Seconds]);
+  }, [isTimerRunning, timerSeconds, countdownTarget, measurements, onChangeMeasurement]);
 
-  // Effect for Timer 2
+  // Regra automática: assim que o usuário preenche todos os dados coletados de tensão e corrente da medição atual,
+  // se houver medição seguinte na campanha, inicia automaticamente o contador para ela!
+  const hasTriggeredM2Ref = useRef<boolean>(false);
+  const hasTriggeredM3Ref = useRef<boolean>(false);
+
   useEffect(() => {
-    let interval: any = null;
-    if (isTimer2Running && timer2Seconds > 0) {
-      interval = setInterval(() => {
-        setTimer2Seconds((prev) => prev - 1);
-      }, 1000);
-    } else if (timer2Seconds === 0 && isTimer2Running) {
-      setIsTimer2Running(false);
-      // Unlock Measurement 3
-      if (measurements[2]) {
-        const updatedMeas3 = {
-          ...measurements[2],
-          isLocked: false
-        };
-        onChangeMeasurement(2, updatedMeas3);
+    // Para M2 (se campanha tiver 2 ou 3 testes)
+    if (measurements.length >= 2 && unlocked[0] && !unlocked[1] && !hasTriggeredM2Ref.current) {
+      const m1Complete = isMeasurementComplete(measurements[0], selectedTransformer);
+      if (m1Complete) {
+        hasTriggeredM2Ref.current = true;
+        setCountdownTarget(1);
+        setTimerSeconds(getCycleDurationSeconds(cycleMode));
+        setIsTimerRunning(true);
       }
     }
-    return () => clearInterval(interval);
-  }, [isTimer2Running, timer2Seconds]);
 
-  // If the page is reloaded during a saved field campaign, restart the full
-  // safety interval instead of leaving the next measurement permanently locked.
-  useEffect(() => {
-    if (measurements[0]?.isRecorded && measurements[1]?.isLocked && !isTimer1Running) {
-      setTimer1Seconds(intervalSeconds);
-      setIsTimer1Running(true);
+    // Para M3 (se campanha tiver 3 testes)
+    if (measurements.length === 3 && unlocked[1] && !unlocked[2] && !hasTriggeredM3Ref.current) {
+      const m2Complete = isMeasurementComplete(measurements[1], selectedTransformer);
+      if (m2Complete) {
+        hasTriggeredM3Ref.current = true;
+        setCountdownTarget(2);
+        setTimerSeconds(getCycleDurationSeconds(cycleMode));
+        setIsTimerRunning(true);
+      }
     }
-  }, [measurements[0]?.isRecorded, measurements[1]?.isLocked, intervalSeconds]);
+  }, [measurements, unlocked, selectedTransformer, cycleMode]);
 
-  useEffect(() => {
-    if (measurements[1]?.isRecorded && measurements[2]?.isLocked && !isTimer2Running) {
-      setTimer2Seconds(intervalSeconds);
-      setIsTimer2Running(true);
+  // Controles do Cronômetro Central
+  const handleStartTimer = () => {
+    if (timerSeconds <= 0) {
+      setTimerSeconds(getCycleDurationSeconds(cycleMode));
     }
-  }, [measurements[1]?.isRecorded, measurements[2]?.isLocked, intervalSeconds]);
-
-  const formatTimer = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    if (countdownTarget === null) {
+      if (!unlocked[0]) setCountdownTarget(0);
+      else if (measurements.length >= 2 && !unlocked[1]) setCountdownTarget(1);
+      else if (measurements.length === 3 && !unlocked[2]) setCountdownTarget(2);
+      else setCountdownTarget(0);
+    }
+    setIsTimerRunning(true);
   };
 
+  const handleStopTimer = () => {
+    setIsTimerRunning(false);
+  };
+
+  const handleBypassUnlockNow = () => {
+    setIsTimerRunning(false);
+    const target = countdownTarget ?? (unlocked[0] ? (unlocked[1] ? 2 : 1) : 0);
+    setUnlocked((prev) => {
+      const updated = [...prev];
+      updated[target] = true;
+      return updated;
+    });
+    setCountdownTarget(null);
+
+    if (measurements[target]) {
+      onChangeMeasurement(target, {
+        ...measurements[target],
+        isLocked: false
+      });
+    }
+  };
+
+  // Alteração de Quantidade de Medições (1, 2 ou 3)
   const handleSetCount = (targetCount: number) => {
     if (onSetMeasurementsCount) {
       onSetMeasurementsCount(targetCount);
@@ -161,93 +204,8 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     }
   };
 
-  const handleValueChange = (
-    measIndex: number,
-    field: keyof SingleMeasurement,
-    val: string
-  ) => {
-    const num = parseFloat(val) || 0;
-    const current = measurements[measIndex];
-
-    const updatedRaw = {
-      ...current,
-      [field]: num
-    };
-
-    // Auto-calculate phase-phase if phase-neutral entered, or vice versa
-    if (selectedTransformer.phaseType === 'TRIFASICO') {
-      if (field === 'van' && num > 0 && current.vab === 0) updatedRaw.vab = Math.round(num * Math.sqrt(3));
-      if (field === 'vbn' && num > 0 && current.vbc === 0) updatedRaw.vbc = Math.round(num * Math.sqrt(3));
-      if (field === 'vcn' && num > 0 && current.vca === 0) updatedRaw.vca = Math.round(num * Math.sqrt(3));
-    } else {
-      // Monofásico 3 fios (e.g., 120/240V ou 127/254V)
-      if (field === 'van' && num > 0 && current.vab === 0) {
-        updatedRaw.vab = current.vbn > 0 ? num + current.vbn : num * 2;
-      }
-      if (field === 'vbn' && num > 0 && current.vab === 0) {
-        updatedRaw.vab = current.van > 0 ? current.van + num : num * 2;
-      }
-    }
-
-    const processed = processSingleMeasurement(updatedRaw, selectedTransformer);
-    onChangeMeasurement(measIndex, processed);
-  };
-
-  const handleSaveMeas1 = () => {
-    const hasVoltage = measurements[0].van > 0 || measurements[0].vab > 0;
-    if (!hasVoltage) {
-      alert('Informe ao menos os valores de tensão para registrar a 1ª medição.');
-      return;
-    }
-    const timestamp = new Date().toLocaleTimeString();
-    const updated = processSingleMeasurement(
-      { ...measurements[0], timestamp, isRecorded: true },
-      selectedTransformer
-    );
-    onChangeMeasurement(0, updated);
-
-    // Start interval timer for Meas 2
-    setTimer1Seconds(intervalSeconds);
-    setIsTimer1Running(true);
-  };
-
-  const handleSaveMeas2 = () => {
-    const hasVoltage = measurements[1].van > 0 || measurements[1].vab > 0;
-    if (!hasVoltage) {
-      alert('Informe ao menos os valores de tensão para registrar a 2ª medição.');
-      return;
-    }
-    const timestamp = new Date().toLocaleTimeString();
-    const updated = processSingleMeasurement(
-      { ...measurements[1], timestamp, isRecorded: true },
-      selectedTransformer
-    );
-    onChangeMeasurement(1, updated);
-
-    // Start interval timer for Meas 3
-    setTimer2Seconds(intervalSeconds);
-    setIsTimer2Running(true);
-  };
-
-  const handleSaveMeas3 = () => {
-    const hasVoltage = measurements[2].van > 0 || measurements[2].vab > 0;
-    if (!hasVoltage) {
-      alert('Informe ao menos os valores de tensão para registrar a 3ª medição.');
-      return;
-    }
-    const timestamp = new Date().toLocaleTimeString();
-    const updated = processSingleMeasurement(
-      { ...measurements[2], timestamp, isRecorded: true },
-      selectedTransformer
-    );
-    onChangeMeasurement(2, updated);
-
-    if (onAllCompleted) {
-      onAllCompleted();
-    }
-  };
-
-  const handleClearMeasurement = (measIndex: number) => {
+  // Limpeza de Medição Específica: "APAGAR DADOS DA CÉLULA"
+  const handleClearCellData = (measIndex: number) => {
     const current = measurements[measIndex];
     const cleared: SingleMeasurement = {
       ...current,
@@ -271,29 +229,57 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
       isRecorded: false
     };
     onChangeMeasurement(measIndex, cleared);
+
+    // Se limpar M1 ou M2, reseta a trava do auto-trigger para poder disparar novamente se preenchido
+    if (measIndex === 0) hasTriggeredM2Ref.current = false;
+    if (measIndex === 1) hasTriggeredM3Ref.current = false;
   };
 
-  const handleBypassTimer1 = () => {
-    setIsTimer1Running(false);
-    setTimer1Seconds(0);
-    if (measurements[1]) {
-      onChangeMeasurement(1, { ...measurements[1], isLocked: false });
+  // Manipulação de Valores Digitados
+  const handleValueChange = (
+    measIndex: number,
+    field: keyof SingleMeasurement,
+    val: string
+  ) => {
+    const num = parseFloat(val) || 0;
+    const current = measurements[measIndex];
+
+    const updatedRaw = {
+      ...current,
+      [field]: num
+    };
+
+    // Auto-cálculo de tensões correspondentes para agilizar preenchimento
+    if (selectedTransformer.phaseType === 'TRIFASICO') {
+      if (field === 'van' && num > 0 && current.vab === 0) updatedRaw.vab = Math.round(num * Math.sqrt(3));
+      if (field === 'vbn' && num > 0 && current.vbc === 0) updatedRaw.vbc = Math.round(num * Math.sqrt(3));
+      if (field === 'vcn' && num > 0 && current.vca === 0) updatedRaw.vca = Math.round(num * Math.sqrt(3));
+    } else {
+      if (field === 'van' && num > 0 && current.vab === 0) {
+        updatedRaw.vab = current.vbn > 0 ? num + current.vbn : num * 2;
+      }
+      if (field === 'vbn' && num > 0 && current.vab === 0) {
+        updatedRaw.vab = current.van > 0 ? current.van + num : num * 2;
+      }
     }
+
+    const processed = processSingleMeasurement(updatedRaw, selectedTransformer);
+    onChangeMeasurement(measIndex, processed);
   };
 
-  const handleBypassTimer2 = () => {
-    setIsTimer2Running(false);
-    setTimer2Seconds(0);
-    if (measurements[2]) {
-      onChangeMeasurement(2, { ...measurements[2], isLocked: false });
-    }
-  };
-
-  const isTri = selectedTransformer.phaseType === 'TRIFASICO';
+  // Rótulo do ciclo
+  const cycleLabel = cycleMode === '1s'
+    ? '1 SEGUNDO'
+    : cycleMode === '5s'
+    ? '5 SEGUNDOS'
+    : cycleMode === '5m'
+    ? '5 MINUTOS'
+    : '10 MINUTOS';
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded border border-slate-300 dark:border-slate-800 p-4 shadow-xs">
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
+    <div className="bg-white dark:bg-slate-900 rounded border border-slate-300 dark:border-slate-800 p-4 shadow-xs space-y-4">
+      {/* Cabeçalho do Módulo */}
+      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
             <Clock className="w-4 h-4" />
@@ -301,843 +287,425 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEGUNDOS' : '10 MINUTOS'})
+                3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES - INTERVALO DE {cycleLabel})
               </h2>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                 ({measurements.length} medição{measurements.length > 1 ? 'ões' : ''})
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões e correntes — adicione de 1 a 3 medições (a 1ª medição é aos 10 min pós-fechamento do trafo; 1 medição é validada como medição instantânea)
+              Coleta de tensões e correntes — a 1ª medição ocorre pós-fechamento do trafo. 1 medição é validada como medição instantânea.
             </p>
-            {cycleMode === '5s' && (
-              <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
-                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; o ciclo de 10 min é para operação de fato.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* SELETOR DE QUANTIDADE DE MEDIÇÕES (1 A 3 TESTES) */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded border border-slate-300 dark:border-slate-700">
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 px-1 font-mono uppercase">
-              QTD. MEDIÇÕES:
-            </span>
-            <button
-              type="button"
-              onClick={() => handleSetCount(1)}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono transition cursor-pointer ${
-                measurements.length === 1
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title="1 Medição Instantânea (10 min pós-fechamento)"
-            >
-              1 TESTE (INSTANTÂNEO)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSetCount(2)}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono transition cursor-pointer ${
-                measurements.length === 2
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title="2 Medições (Intervalo de 10 minutos)"
-            >
-              2 TESTES
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSetCount(3)}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono transition cursor-pointer ${
-                measurements.length === 3
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title="3 Medições (Campanha Completa 30 min)"
-            >
-              3 TESTES
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded border border-slate-300 dark:border-slate-700">
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 px-1 font-mono uppercase">CICLO:</span>
-            <button
-              type="button"
-              onClick={() => {
-                onCycleModeChange('5s');
-                if (!isTimer0Running) setTimer0Seconds(5);
-                if (!isTimer1Running) setTimer1Seconds(5);
-                if (!isTimer2Running) setTimer2Seconds(5);
-              }}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono transition cursor-pointer ${
-                cycleMode === '5s'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              5 SEG (TESTES)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onCycleModeChange('10m');
-                if (!isTimer0Running) setTimer0Seconds(600);
-                if (!isTimer1Running) setTimer1Seconds(600);
-                if (!isTimer2Running) setTimer2Seconds(600);
-              }}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono transition cursor-pointer ${
-                cycleMode === '10m'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              10 MIN (OPERAÇÃO)
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200">
-            <Timer className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span className="text-[11px] font-mono font-bold">
-              TEMPO RECOMENDADO: {cycleMode === '5s' ? (measurements.length === 1 ? '5 SEG' : measurements.length === 2 ? '10 SEG' : '15 SEG') : (measurements.length === 1 ? '10 MIN' : measurements.length === 2 ? '20 MIN' : '30 MIN')}
-            </span>
           </div>
         </div>
       </div>
 
-      {/* Dynamic Columns Side-by-Side */}
-      <div className={`grid grid-cols-1 ${measurements.length === 2 ? 'md:grid-cols-2' : measurements.length >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'} gap-3`}>
-        {/* COLUNA 1: MEDIÇÃO 1 */}
-        <div className={`rounded border p-3 relative flex flex-col justify-between shadow-xs transition-all ${
-          !isMeas1Unlocked
-            ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
-            : 'bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
-                <span className={`w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono ${
-                  !isMeas1Unlocked ? 'bg-slate-400 text-white' : 'bg-blue-600 text-white'
-                }`}>
-                  1
-                </span>
-                <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  1ª Medição (T = {cycleMode === '5s' ? '5 seg' : '10 min pós-fechamento'})
-                </h3>
+      {/* PAINEL DE PRÉ-CONFIGURAÇÃO DO TESTE & CRONÔMETRO CENTRAL */}
+      <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-3 border-b border-slate-200 dark:border-slate-700/80">
+          {/* 1. SELETOR DE QUANTIDADE DE TESTES */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider block">
+              1. QUANTIDADE DE TESTES (1 A 3 MEDIÇÕES)
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSetCount(1)}
+                className={`py-1.5 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                  measurements.length === 1
+                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>1 TESTE</span>
+                <span className="text-[9px] font-normal opacity-80">(Instantâneo)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetCount(2)}
+                className={`py-1.5 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                  measurements.length === 2
+                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>2 TESTES</span>
+                <span className="text-[9px] font-normal opacity-80">(Duplo)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetCount(3)}
+                className={`py-1.5 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                  measurements.length === 3
+                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>3 TESTES</span>
+                <span className="text-[9px] font-normal opacity-80">(Campanha)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2. SELETOR DE INTERVALO DE CICLO */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider block">
+              2. INTERVALO DE CICLO TEMPORIZADO
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => onCycleModeChange('1s')}
+                className={`py-1.5 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                  cycleMode === '1s'
+                    ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/40'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>1 SEGUNDO</span>
+                <span className="text-[9px] font-normal opacity-80">(Teste Rápido)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onCycleModeChange('5m')}
+                className={`py-1.5 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                  cycleMode === '5m'
+                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>5 MIN</span>
+                <span className="text-[9px] font-normal opacity-80">(Intermediário)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onCycleModeChange('10m')}
+                className={`py-1.5 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                  cycleMode === '10m'
+                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/40'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>10 MIN</span>
+                <span className="text-[9px] font-normal opacity-80">(Recomendado)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. CRONÔMETRO CENTRAL E CONTROLES INTEGRADOS */}
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            {/* Display Digital do Contador */}
+            <div className="bg-slate-950 text-amber-400 font-mono font-extrabold text-2xl py-1.5 px-3.5 rounded shadow-inner border border-slate-800 tracking-widest flex items-center gap-2">
+              <Timer className={`w-5 h-5 ${isTimerRunning ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
+              <span>{formatTimer(timerSeconds)}</span>
+            </div>
+
+            {/* Status Descritivo */}
+            <div className="space-y-0.5">
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono">
+                {isTimerRunning
+                  ? `CONTADOR EM ANDAMENTO — LIBERANDO ${(countdownTarget ?? 0) + 1}ª MEDIÇÃO`
+                  : countdownTarget !== null
+                  ? `CONTADOR PRONTO — PARA ${(countdownTarget ?? 0) + 1}ª MEDIÇÃO`
+                  : 'STATUS DA CAMPANHA TEMPORIZADA'}
               </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleClearMeasurement(0)}
-                  title="Parar / Limpar campos da 1ª Medição"
-                  className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-                {!isMeas1Unlocked ? (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> AGUARDANDO TEMPO
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                {isTimerRunning ? (
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block"></span>
+                    Aguardando contagem para liberar os campos de coleta...
                   </span>
+                ) : countdownTarget !== null ? (
+                  <span>Clique em "INICIAR CONTADOR" para disparar a contagem regressiva.</span>
                 ) : (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                    <Unlock className="w-3 h-3" /> LIBERADO
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Medição liberada para inserção de dados coletados.
                   </span>
                 )}
               </div>
             </div>
+          </div>
 
-            {/* SE NÃO ESTIVER LIBERADO, MOSTRA O CRONÔMETRO PÓS-FECHAMENTO */}
-            {!isMeas1Unlocked ? (
-              <div className="py-6 text-center flex flex-col items-center justify-center">
-                <div className="w-full bg-slate-900 dark:bg-slate-950 text-yellow-400 font-mono font-bold text-xl py-2 px-3 rounded text-center my-2 shadow-inner border border-slate-800 dark:border-slate-700 tracking-widest flex items-center justify-center gap-2">
-                  <Timer className="w-5 h-5 text-yellow-400 animate-pulse" />
-                  <span>{isTimer0Running ? formatTimer(timer0Seconds) : formatTimer(intervalSeconds)}</span>
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-mono mt-1">
-                  {isTimer0Running
-                    ? `Aguardando intervalo de ${cycleMode === '5s' ? '5 seg' : '10 min'} pós-fechamento do trafo para estabilização térmica...`
-                    : 'Inicie a contagem pós-fechamento antes da 1ª coleta, ou libere agora para inserir os dados.'}
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2 mt-3 w-full justify-center">
-                  {!isTimer0Running && (
+          {/* BOTÕES DE CONTROLE JUNTO DO CRONÔMETRO */}
+          <div className="flex items-center gap-2 flex-wrap justify-end w-full sm:w-auto">
+            {!isTimerRunning ? (
+              <button
+                type="button"
+                onClick={handleStartTimer}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>INICIAR CONTADOR</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleStopTimer}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
+              >
+                <Pause className="w-3.5 h-3.5" />
+                <span>PARAR CONTADOR</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleBypassUnlockNow}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
+              title="Liberar imediatamente sem aguardar o contador"
+            >
+              <Unlock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>LIBERAR AGORA</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* CARDS DE MEDIÇÃO: LADO A LADO RESPONSIVO */}
+      <div className={`grid grid-cols-1 ${measurements.length === 2 ? 'md:grid-cols-2' : measurements.length >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'} gap-3`}>
+        {measurements.map((meas, idx) => {
+          const isUnlocked = unlocked[idx];
+          const measNum = idx + 1;
+
+          // Rótulo da medição
+          const offsetStr = idx === 0
+            ? `${cycleMode === '1s' ? '1 s' : cycleMode === '5s' ? '5 s' : cycleMode === '5m' ? '5 min' : '10 min'} pós-fechamento`
+            : idx === 1
+            ? `${cycleMode === '1s' ? '2 s' : cycleMode === '5s' ? '10 s' : cycleMode === '5m' ? '10 min' : '20 min'}`
+            : `${cycleMode === '1s' ? '3 s' : cycleMode === '5s' ? '15 s' : cycleMode === '5m' ? '15 min' : '30 min'}`;
+
+          return (
+            <div
+              key={meas.id}
+              className={`rounded border p-3 relative flex flex-col justify-between shadow-xs transition-all ${
+                !isUnlocked
+                  ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
+                  : 'bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'
+              }`}
+            >
+              <div>
+                {/* Header do Card */}
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono ${
+                      !isUnlocked ? 'bg-slate-400 text-white' : 'bg-blue-600 text-white'
+                    }`}>
+                      {measNum}
+                    </span>
+                    <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
+                      {measNum}ª Medição (T = {offsetStr})
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Botão APAGAR DADOS DA CÉLULA */}
                     <button
                       type="button"
-                      onClick={() => {
-                        setTimer0Seconds(intervalSeconds);
-                        setIsTimer0Running(true);
-                      }}
-                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
+                      onClick={() => handleClearCellData(idx)}
+                      title={`Apagar todos os dados da ${measNum}ª Medição`}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 transition cursor-pointer"
                     >
-                      <Play className="w-3.5 h-3.5" />
-                      <span>INICIAR CRONÔMETRO ({cycleMode === '5s' ? '5 SEG' : '10 MIN'})</span>
+                      <Trash2 className="w-3 h-3" />
+                      <span>APAGAR DADOS DA CÉLULA</span>
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsTimer0Running(false);
-                      setIsMeas1Unlocked(true);
-                    }}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 cursor-pointer shadow-xs transition"
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    <span>LIBERAR MEDIÇÃO AGORA</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Inputs Van, Vbn, Vcn */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    TENSÕES FASE-NEUTRO [V]
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
-                      <input
-                        type="number"
-                        value={measurements[0].van || ''}
-                        onChange={(e) => handleValueChange(0, 'van', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                        placeholder=""
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
-                      <input
-                        type="number"
-                        value={measurements[0].vbn || ''}
-                        onChange={(e) => handleValueChange(0, 'vbn', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
-                        <input
-                          type="number"
-                          value={measurements[0].vcn || ''}
-                          onChange={(e) => handleValueChange(0, 'vcn', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder=""
-                        />
-                      </div>
+
+                    {!isUnlocked ? (
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> AGUARDANDO
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                        <Unlock className="w-3 h-3" /> LIBERADO
+                      </span>
                     )}
                   </div>
                 </div>
 
-                {/* Inputs Vab, Vbc, Vca */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    TENSÕES FASE-FASE [V]
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
-                      <input
-                        type="number"
-                        value={measurements[0].vab || ''}
-                        onChange={(e) => handleValueChange(0, 'vab', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
-                          <input
-                            type="number"
-                            value={measurements[0].vbc || ''}
-                            onChange={(e) => handleValueChange(0, 'vbc', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder=""
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
-                          <input
-                            type="number"
-                            value={measurements[0].vca || ''}
-                            onChange={(e) => handleValueChange(0, 'vca', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder=""
-                          />
-                        </div>
-                      </>
-                    )}
+                {/* Se Bloqueado, exibe aviso aguardando cronômetro */}
+                {!isUnlocked ? (
+                  <div className="py-8 text-center flex flex-col items-center justify-center space-y-2 bg-slate-100/60 dark:bg-slate-900/60 rounded border border-dashed border-slate-300 dark:border-slate-800 my-2">
+                    <Lock className="w-7 h-7 text-slate-400 dark:text-slate-500" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono">
+                      CAMPOS BLOQUEADOS
+                    </span>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs font-mono px-2">
+                      Inicie ou aguarde a conclusão do contador temporizado no painel acima para liberar a inserção dos dados coletados desta medição.
+                    </p>
                   </div>
-                </div>
-
-                {/* Inputs Ia, Ib, Ic, In */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    CORRENTES SECUNDÁRIAS [A]
-                  </label>
-                  <div className={`grid gap-1.5 ${isTri ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
-                      <input
-                        type="number"
-                        value={measurements[0].ia || ''}
-                        onChange={(e) => handleValueChange(0, 'ia', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-amber-500"
-                        placeholder=""
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
-                      <input
-                        type="number"
-                        value={measurements[0].ib || ''}
-                        onChange={(e) => handleValueChange(0, 'ib', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-amber-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
-                        <input
-                          type="number"
-                          value={measurements[0].ic || ''}
-                          onChange={(e) => handleValueChange(0, 'ic', e.target.value)}
-                          className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-amber-500"
-                          placeholder=""
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
-                      <input
-                        type="number"
-                        value={measurements[0].in || ''}
-                        onChange={(e) => handleValueChange(0, 'in', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-amber-500"
-                        placeholder=""
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Calculated Mini Specs */}
-                <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 mb-2.5 text-[11px] grid grid-cols-2 gap-1 font-mono text-slate-700 dark:text-slate-300">
-                  <div>V Média F-F: <span className="text-slate-900 dark:text-slate-100 font-bold">{measurements[0].avgVoltagePhasePhase > 0 ? `${measurements[0].avgVoltagePhasePhase}V` : '—'}</span></div>
-                  <div>I Média: <span className="text-slate-900 dark:text-slate-100 font-bold">{measurements[0].avgCurrent > 0 ? `${measurements[0].avgCurrent}A` : '—'}</span></div>
-                  <div>kVA Total: <span className="text-blue-700 dark:text-blue-400 font-bold">{measurements[0].totalKva > 0 ? measurements[0].totalKva : '—'}</span></div>
-                  <div>Carga: <span className="text-emerald-700 dark:text-emerald-400 font-bold">{measurements[0].loadingPercent > 0 ? `${measurements[0].loadingPercent}%` : '—'}</span></div>
-                </div>
-
-                <div className="flex flex-col gap-1.5 mt-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveMeas1}
-                    className="w-full py-1.5 px-3 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>REGISTRAR 1ª MEDIÇÃO {measurements.length > 1 ? `(+${cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)` : ''}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleClearMeasurement(0)}
-                    className="w-full py-1 px-2 rounded text-[11px] font-bold bg-slate-100 hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 text-slate-600 hover:text-red-700 dark:text-slate-400 dark:hover:text-red-300 border border-slate-300 dark:border-slate-700 hover:border-red-300 transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3 text-red-500" />
-                    <span>PARAR / LIMPAR ESTA MEDIÇÃO</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-
-        {/* COLUNA 2: MEDIÇÃO 2 */}
-        {measurements.length >= 2 && measurements[1] && (
-        <div className={`rounded border p-3 relative flex flex-col justify-between transition-all ${
-          measurements[1].isLocked
-            ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
-            : 'bg-slate-50 dark:bg-slate-800/60 border-purple-300 dark:border-purple-800'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
-                <span className={`w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono ${
-                  measurements[1].isLocked ? 'bg-slate-400 text-white' : 'bg-purple-600 text-white'
-                }`}>
-                  2
-                </span>
-                <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  2ª Medição (T = {cycleMode === '5s' ? '10 seg' : '20 min'})
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleClearMeasurement(1)}
-                  title="Limpar campos da 2ª Medição"
-                  className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 transition cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-                {onRemoveMeasurement && (
-                  <button
-                    type="button"
-                    onClick={() => onRemoveMeasurement(1)}
-                    title="Remover 2ª Medição"
-                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {measurements[1].isLocked ? (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> BLOQUEADO
-                  </span>
                 ) : (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                    <Unlock className="w-3 h-3" /> LIBERADO
-                  </span>
+                  <>
+                    {/* Inputs Tensões Fase-Neutro */}
+                    <div className="mb-2.5">
+                      <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
+                        TENSÕES FASE-NEUTRO [V]
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
+                          <input
+                            type="number"
+                            value={meas.van || ''}
+                            onChange={(e) => handleValueChange(idx, 'van', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
+                          <input
+                            type="number"
+                            value={meas.vbn || ''}
+                            onChange={(e) => handleValueChange(idx, 'vbn', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        {isTri && (
+                          <div>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
+                            <input
+                              type="number"
+                              value={meas.vcn || ''}
+                              onChange={(e) => handleValueChange(idx, 'vcn', e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                              placeholder="0"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Inputs Tensões Fase-Fase */}
+                    <div className="mb-2.5">
+                      <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
+                        TENSÕES FASE-FASE [V]
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
+                          <input
+                            type="number"
+                            value={meas.vab || ''}
+                            onChange={(e) => handleValueChange(idx, 'vab', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        {isTri && (
+                          <>
+                            <div>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
+                              <input
+                                type="number"
+                                value={meas.vbc || ''}
+                                onChange={(e) => handleValueChange(idx, 'vbc', e.target.value)}
+                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
+                              <input
+                                type="number"
+                                value={meas.vca || ''}
+                                onChange={(e) => handleValueChange(idx, 'vca', e.target.value)}
+                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                                placeholder="0"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Inputs Correntes */}
+                    <div className="mb-2.5">
+                      <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
+                        CORRENTES DE LINHA [A]
+                      </label>
+                      <div className={`grid ${isTri ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
+                          <input
+                            type="number"
+                            value={meas.ia || ''}
+                            onChange={(e) => handleValueChange(idx, 'ia', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
+                          <input
+                            type="number"
+                            value={meas.ib || ''}
+                            onChange={(e) => handleValueChange(idx, 'ib', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        {isTri && (
+                          <div>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
+                            <input
+                              type="number"
+                              value={meas.ic || ''}
+                              onChange={(e) => handleValueChange(idx, 'ic', e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                              placeholder="0"
+                            />
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
+                          <input
+                            type="number"
+                            value={meas.in || ''}
+                            onChange={(e) => handleValueChange(idx, 'in', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
+
+              {/* Rodapé do Card com Métricas Instantâneas daquela Medição */}
+              {isUnlocked && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-1.5 text-[10px] font-mono text-slate-600 dark:text-slate-400">
+                  <div>
+                    <span>Média F-F: </span>
+                    <strong className="text-slate-800 dark:text-slate-200">{meas.avgVoltagePhasePhase} V</strong>
+                  </div>
+                  <div>
+                    <span>Carreg.: </span>
+                    <strong className={meas.loadingPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-200'}>
+                      {meas.loadingPercent}%
+                    </strong>
+                  </div>
+                  <div>
+                    <span>I Média: </span>
+                    <strong className="text-slate-800 dark:text-slate-200">{meas.avgCurrent} A</strong>
+                  </div>
+                  <div>
+                    <span>Potência: </span>
+                    <strong className="text-slate-800 dark:text-slate-200">{meas.totalKva} kVA</strong>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {/* If locked, display active countdown timer */}
-            {measurements[1].isLocked ? (
-              <div className="py-6 text-center flex flex-col items-center justify-center">
-                <div className="w-full bg-slate-900 dark:bg-slate-950 text-yellow-400 font-mono font-bold text-xl py-2 px-3 rounded text-center my-2 shadow-inner border border-slate-800 dark:border-slate-700 tracking-widest flex items-center justify-center gap-2">
-                  <Timer className="w-5 h-5 text-yellow-400 animate-pulse" />
-                  <span>{isTimer1Running ? formatTimer(timer1Seconds) : formatTimer(intervalSeconds)}</span>
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-mono mt-1">
-                  {isTimer1Running
-                    ? `Aguardando intervalo de ${cycleMode === '5s' ? '5 seg' : `${intervalMinutes} min`}...`
-                    : 'Registre a 1ª medição para iniciar o cronômetro.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleBypassTimer1}
-                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 cursor-pointer shadow-xs transition"
-                >
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>DESBLOQUEAR AGORA (PULAR INTERVALO)</span>
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Inputs Van, Vbn, Vcn */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    TENSÕES FASE-NEUTRO [V]
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
-                      <input
-                        type="number"
-                        value={measurements[1].van || ''}
-                        onChange={(e) => handleValueChange(1, 'van', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-purple-500"
-                        placeholder=""
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
-                      <input
-                        type="number"
-                        value={measurements[1].vbn || ''}
-                        onChange={(e) => handleValueChange(1, 'vbn', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-purple-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
-                        <input
-                          type="number"
-                          value={measurements[1].vcn || ''}
-                          onChange={(e) => handleValueChange(1, 'vcn', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-purple-500"
-                          placeholder=""
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inputs Vab, Vbc, Vca */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    TENSÕES FASE-FASE [V]
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
-                      <input
-                        type="number"
-                        value={measurements[1].vab || ''}
-                        onChange={(e) => handleValueChange(1, 'vab', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-purple-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
-                          <input
-                            type="number"
-                            value={measurements[1].vbc || ''}
-                            onChange={(e) => handleValueChange(1, 'vbc', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-purple-500"
-                            placeholder=""
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
-                          <input
-                            type="number"
-                            value={measurements[1].vca || ''}
-                            onChange={(e) => handleValueChange(1, 'vca', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-purple-500"
-                            placeholder=""
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inputs Ia, Ib, Ic, In */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    CORRENTES SECUNDÁRIAS [A]
-                  </label>
-                  <div className={`grid gap-1.5 ${isTri ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
-                      <input
-                        type="number"
-                        value={measurements[1].ia || ''}
-                        onChange={(e) => handleValueChange(1, 'ia', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-purple-500"
-                        placeholder=""
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
-                      <input
-                        type="number"
-                        value={measurements[1].ib || ''}
-                        onChange={(e) => handleValueChange(1, 'ib', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-purple-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
-                        <input
-                          type="number"
-                          value={measurements[1].ic || ''}
-                          onChange={(e) => handleValueChange(1, 'ic', e.target.value)}
-                          className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-purple-500"
-                          placeholder=""
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
-                      <input
-                        type="number"
-                        value={measurements[1].in || ''}
-                        onChange={(e) => handleValueChange(1, 'in', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-purple-500"
-                        placeholder=""
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Calculated Mini Specs */}
-                <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 mb-2.5 text-[11px] grid grid-cols-2 gap-1 font-mono text-slate-700 dark:text-slate-300">
-                  <div>V Média F-F: <span className="text-slate-900 dark:text-slate-100 font-bold">{measurements[1].avgVoltagePhasePhase > 0 ? `${measurements[1].avgVoltagePhasePhase}V` : '—'}</span></div>
-                  <div>I Média: <span className="text-slate-900 dark:text-slate-100 font-bold">{measurements[1].avgCurrent > 0 ? `${measurements[1].avgCurrent}A` : '—'}</span></div>
-                  <div>kVA Total: <span className="text-blue-700 dark:text-blue-400 font-bold">{measurements[1].totalKva > 0 ? measurements[1].totalKva : '—'}</span></div>
-                  <div>Carga: <span className="text-emerald-700 dark:text-emerald-400 font-bold">{measurements[1].loadingPercent > 0 ? `${measurements[1].loadingPercent}%` : '—'}</span></div>
-                </div>
-
-                <div className="flex flex-col gap-1.5 mt-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveMeas2}
-                    className="w-full py-1.5 px-3 rounded text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>REGISTRAR 2ª MEDIÇÃO {measurements.length > 2 ? `(+${cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)` : ''}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleClearMeasurement(1)}
-                    className="w-full py-1 px-2 rounded text-[11px] font-bold bg-slate-100 hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 text-slate-600 hover:text-red-700 dark:text-slate-400 dark:hover:text-red-300 border border-slate-300 dark:border-slate-700 hover:border-red-300 transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3 text-red-500" />
-                    <span>PARAR / LIMPAR ESTA MEDIÇÃO</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        )}
-
-
-        {/* COLUNA 3: MEDIÇÃO 3 */}
-        {measurements.length >= 3 && measurements[2] && (
-        <div className={`rounded border p-3 relative flex flex-col justify-between transition-all ${
-          measurements[2].isLocked
-            ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
-            : 'bg-slate-50 dark:bg-slate-800/60 border-emerald-300 dark:border-emerald-800'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
-                <span className={`w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono ${
-                  measurements[2].isLocked ? 'bg-slate-400 text-white' : 'bg-emerald-600 text-white'
-                }`}>
-                  3
-                </span>
-                <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  3ª Medição (T = {cycleMode === '5s' ? '15 seg' : '30 min'})
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleClearMeasurement(2)}
-                  title="Limpar campos da 3ª Medição"
-                  className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 transition cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-                {onRemoveMeasurement && (
-                  <button
-                    type="button"
-                    onClick={() => onRemoveMeasurement(2)}
-                    title="Remover 3ª Medição"
-                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {measurements[2].isLocked ? (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> BLOQUEADO
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                    <Unlock className="w-3 h-3" /> LIBERADO
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* If locked, display active countdown timer */}
-            {measurements[2].isLocked ? (
-              <div className="py-6 text-center flex flex-col items-center justify-center">
-                <div className="w-full bg-slate-900 dark:bg-slate-950 text-yellow-400 font-mono font-bold text-xl py-2 px-3 rounded text-center my-2 shadow-inner border border-slate-800 dark:border-slate-700 tracking-widest flex items-center justify-center gap-2">
-                  <Timer className="w-5 h-5 text-yellow-400 animate-pulse" />
-                  <span>{isTimer2Running ? formatTimer(timer2Seconds) : formatTimer(intervalSeconds)}</span>
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-mono mt-1">
-                  {isTimer2Running
-                    ? `Aguardando intervalo de ${cycleMode === '5s' ? '5 seg' : `${intervalMinutes} min`} para a 3ª medição...`
-                    : 'Registre a 2ª medição para liberar o timer final.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleBypassTimer2}
-                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 cursor-pointer shadow-xs transition"
-                >
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>DESBLOQUEAR AGORA (PULAR INTERVALO)</span>
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Inputs Van, Vbn, Vcn */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    TENSÕES FASE-NEUTRO [V]
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
-                      <input
-                        type="number"
-                        value={measurements[2].van || ''}
-                        onChange={(e) => handleValueChange(2, 'van', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                        placeholder=""
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
-                      <input
-                        type="number"
-                        value={measurements[2].vbn || ''}
-                        onChange={(e) => handleValueChange(2, 'vbn', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
-                        <input
-                          type="number"
-                          value={measurements[2].vcn || ''}
-                          onChange={(e) => handleValueChange(2, 'vcn', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                          placeholder=""
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inputs Vab, Vbc, Vca */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    TENSÕES FASE-FASE [V]
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
-                      <input
-                        type="number"
-                        value={measurements[2].vab || ''}
-                        onChange={(e) => handleValueChange(2, 'vab', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
-                          <input
-                            type="number"
-                            value={measurements[2].vbc || ''}
-                            onChange={(e) => handleValueChange(2, 'vbc', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                            placeholder=""
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
-                          <input
-                            type="number"
-                            value={measurements[2].vca || ''}
-                            onChange={(e) => handleValueChange(2, 'vca', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                            placeholder=""
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inputs Ia, Ib, Ic, In */}
-                <div className="mb-2.5">
-                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                    CORRENTES SECUNDÁRIAS [A]
-                  </label>
-                  <div className={`grid gap-1.5 ${isTri ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
-                      <input
-                        type="number"
-                        value={measurements[2].ia || ''}
-                        onChange={(e) => handleValueChange(2, 'ia', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-emerald-500"
-                        placeholder=""
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
-                      <input
-                        type="number"
-                        value={measurements[2].ib || ''}
-                        onChange={(e) => handleValueChange(2, 'ib', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-emerald-500"
-                        placeholder=""
-                      />
-                    </div>
-                    {isTri && (
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
-                        <input
-                          type="number"
-                          value={measurements[2].ic || ''}
-                          onChange={(e) => handleValueChange(2, 'ic', e.target.value)}
-                          className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-emerald-500"
-                          placeholder=""
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
-                      <input
-                        type="number"
-                        value={measurements[2].in || ''}
-                        onChange={(e) => handleValueChange(2, 'in', e.target.value)}
-                        className="w-full bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2 py-1 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:border-emerald-500"
-                        placeholder=""
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Calculated Mini Specs */}
-                <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 mb-2.5 text-[11px] grid grid-cols-2 gap-1 font-mono text-slate-700 dark:text-slate-300">
-                  <div>V Média F-F: <span className="text-slate-900 dark:text-slate-100 font-bold">{measurements[2].avgVoltagePhasePhase > 0 ? `${measurements[2].avgVoltagePhasePhase}V` : '—'}</span></div>
-                  <div>I Média: <span className="text-slate-900 dark:text-slate-100 font-bold">{measurements[2].avgCurrent > 0 ? `${measurements[2].avgCurrent}A` : '—'}</span></div>
-                  <div>kVA Total: <span className="text-blue-700 dark:text-blue-400 font-bold">{measurements[2].totalKva > 0 ? measurements[2].totalKva : '—'}</span></div>
-                  <div>Carga: <span className="text-emerald-700 dark:text-emerald-400 font-bold">{measurements[2].loadingPercent > 0 ? `${measurements[2].loadingPercent}%` : '—'}</span></div>
-                </div>
-
-                <div className="flex flex-col gap-1.5 mt-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveMeas3}
-                    className="w-full py-1.5 px-3 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>FINALIZAR 3ª MEDIÇÃO & LAUDO</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleClearMeasurement(2)}
-                    className="w-full py-1 px-2 rounded text-[11px] font-bold bg-slate-100 hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 text-slate-600 hover:text-red-700 dark:text-slate-400 dark:hover:text-red-300 border border-slate-300 dark:border-slate-700 hover:border-red-300 transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3 text-red-500" />
-                    <span>PARAR / LIMPAR ESTA MEDIÇÃO</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        )}
+          );
+        })}
       </div>
     </div>
   );

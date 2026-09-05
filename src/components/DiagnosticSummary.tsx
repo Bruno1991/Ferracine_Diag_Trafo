@@ -68,8 +68,12 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             <AlertOctagon className="w-4 h-4" />
             <span>
               Qualidade dos dados: {analysis.dataQuality.status} — {
-                analysis.cycleMode === '5s'
+                analysis.cycleMode === '1s'
+                  ? 'ciclo 1 s (modo de teste)'
+                  : analysis.cycleMode === '5s'
                   ? 'ciclo 5 s (modo de teste)'
+                  : analysis.cycleMode === '5m'
+                  ? 'ciclo 5 minutos'
                   : analysis.dataQuality.isInstantaneous
                     ? 'Medição Instantânea (10 min pós-fechamento)'
                     : 'ciclo 10 minutos (operação de fato)'
