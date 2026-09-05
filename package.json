@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
-    "test": "pnpm run test:diagnostic",
+    "test": "tsx scripts/verify-diagnostic.ts",
     "test:diagnostic": "tsx scripts/verify-diagnostic.ts",
     "check": "pnpm run lint && pnpm run test",
     "preview": "vite preview",

@@ -10,7 +10,8 @@ on:
       - 'public/**'
       - 'scripts/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'tsconfig.json'
       - 'vite.config.ts'
       - '.github/workflows/deploy-pages.yml'
@@ -30,12 +31,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Baixar o repositorio
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'pnpm'
 
       - name: Configurar GitHub Pages
         id: pages
@@ -56,21 +63,21 @@ jobs:
 
       - name: Instalar dependencias
         working-directory: ${{ steps.app.outputs.dir }}
-        run: npm ci --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
 
       - name: Validar tipos
         working-directory: ${{ steps.app.outputs.dir }}
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Executar testes diagnosticos
         working-directory: ${{ steps.app.outputs.dir }}
-        run: npm test
+        run: pnpm run test
 
       - name: Gerar aplicacao
         working-directory: ${{ steps.app.outputs.dir }}
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: npm run build
+        run: pnpm run build
 
       - name: Enviar artefato do Pages
         uses: actions/upload-pages-artifact@v4
