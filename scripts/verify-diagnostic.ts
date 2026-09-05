@@ -81,6 +81,25 @@ assert(healthyAnalysis.dataQuality.status === 'VALIDO' && healthyAnalysis.dataQu
 assert(healthyAnalysis.prodist.voltageStatus === 'ADEQUADA', 'Cenario equilibrado deveria ser ADEQUADO no PRODIST.');
 assert(healthyAnalysis.recommendedTap.includes(`TAP ${transformer.activeTapIndex}`), 'Recomendacao deve usar o TAP real do transformador.');
 
+const instantaneousRaw: SingleMeasurement = {
+  id: 1,
+  label: '1ª Medição (T = 10 min pós-fechamento)',
+  timestamp: '10:10:00',
+  isLocked: false,
+  isRecorded: true,
+  van: 119.1, vbn: 119.1, vcn: 119.1,
+  vab: 206.3, vbc: 206.3, vca: 206.3,
+  ia: 250, ib: 250, ic: 250, in: 0,
+  powerFactor: 0.92,
+  avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0, avgCurrent: 0,
+  totalKva: 0, loadingPercent: 0, fdtpPercent: 0
+};
+const instantaneous = processSingleMeasurement(instantaneousRaw, transformer);
+const instantaneousAnalysis = performFullDiagnosticAnalysis([instantaneous], transformer, '10m');
+assert(instantaneousAnalysis.dataQuality.status === 'VALIDO', 'Uma medicao individual completa deve ser validada como Medicao Instantanea (status VALIDO).');
+assert(instantaneousAnalysis.dataQuality.canIssueTapRecommendation, 'Medicao instantanea deve liberar recomendacao de TAP.');
+assert(!instantaneousAnalysis.recommendedTap.includes('BLOQUEADA'), 'Medicao instantanea nao pode ter TAP bloqueado.');
+
 const serviceWorker = readFileSync(join(process.cwd(), 'public', 'sw.js'), 'utf8');
 assert(serviceWorker.includes('networkFirst') && serviceWorker.includes('ferracine-diag-trafo-v5'), 'Service worker deve atualizar navegacao sem perder o fallback offline.');
 

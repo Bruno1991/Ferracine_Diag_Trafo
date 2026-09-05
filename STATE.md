@@ -69,6 +69,16 @@ O **Ferracine Diag Trafo** é um sistema PWA / Web offline-first voltado para en
     - **📋 Placas de Campo / Técnicos:** Espaço reservado exclusivamente para placas cadastradas pelos usuários em campo.
   - Adicionada barra de **busca em tempo real** (filtro por fabricante, modelo ou potência kVA) e **seletor de categoria** (Todas as Fontes, ETU, Campo, INMETRO).
 
+### 2.6. Ajuste do Laudo Técnico (PDF) e Validação de Medição Instantânea de Campo
+- **Reorganização Estrutural do PDF:**
+  - **Seção 1 (Identificação e Localização):** Campo `TAG / Nº Trafo:` removido do bloco 1. Linhas organizadas com `Equipe:` e `Concessionária:` pareadas harmonicamente no mesmo nível visual.
+  - **Seção 2 (Transformador):** Título renomeado de *"2. ESPECIFICAÇÕES NOMINAIS DA PLACA DO TRANSFORMADOR"* para **`2. DADOS E ESPECIFICAÇÕES NOMINAIS DO TRANSFORMADOR`**, alocando o campo `TAG / Nº Trafo:` dentro dos dados do equipamento (ao lado de Marca / Nº de Série).
+- **Regra Operacional de Campo dos 10 Minutos e Medição Instantânea:**
+  - A 1ª medição em campo é realizada **10 minutos após o fechamento (energização) do transformador**.
+  - As etapas seguintes passam a ser rotuladas: `1ª Medição (T = 10 min pós-fechamento)`, `2ª Medição (T = 20 min)` e `3ª Medição (T = 30 min)`.
+  - **Validação com 1 Medição:** Quando o eletricista registra apenas 1 medição completa, o sistema valida formalmente o diagnóstico como **`VÁLIDO (Medição Instantânea)`** com status `ADEQUADA` e cálculo ativo de comutação/manutenção de TAP (sem bloqueio indevido).
+  - A tolerância fasorial e de tensões PRODIST foi desacoplada de bloqueios críticos, permitindo recomendação de TAP assertiva em cenários reais de baixa tensão (ex: 206,3 V).
+
 ---
 
 ## 3. Arquitetura Técnica e Stack de Tecnologias

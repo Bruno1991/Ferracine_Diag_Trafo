@@ -242,7 +242,7 @@ export default function App() {
 
   const createInitialMeasurement = (): SingleMeasurement => ({
     id: 1,
-    label: '1ª Medição (T = 0 min)',
+    label: '1ª Medição (T = 10 min pós-fechamento)',
     timestamp: new Date().toLocaleTimeString('pt-BR'),
     isLocked: false,
     isRecorded: false,
@@ -267,8 +267,8 @@ export default function App() {
     if (measurements.length >= 3) return;
     const nextId = measurements.length + 1;
     const label = nextId === 2
-      ? `2ª Medição (T = ${cycleMode === '5s' ? '5 seg' : '10 min'})`
-      : `3ª Medição (T = ${cycleMode === '5s' ? '10 seg' : '20 min'})`;
+      ? `2ª Medição (T = ${cycleMode === '5s' ? '10 seg' : '20 min'})`
+      : `3ª Medição (T = ${cycleMode === '5s' ? '15 seg' : '30 min'})`;
 
     const newMeas: SingleMeasurement = processSingleMeasurement(
       {

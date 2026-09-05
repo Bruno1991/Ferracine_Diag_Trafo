@@ -47,7 +47,7 @@ function isMeasurementReady(measurement: SingleMeasurement, transformer: Transfo
 
 function hasValidTransformerIdentity(transformer: TransformerSpec): boolean {
   return Boolean(
-    transformer.id &&
+    (transformer.id || transformer.powerKva > 0) &&
     transformer.powerKva > 0 &&
     transformer.primaryVoltageV > 0 &&
     transformer.secondaryVoltageV > 0 &&
@@ -349,14 +349,16 @@ function validateMeasurementData(
       title: 'Nenhuma medição completa',
       message: 'Preencha e registre pelo menos 1 medição para gerar o laudo.'
     });
-  } else if (valid.length < 3) {
+  } else if (valid.length === 2) {
     issues.push({
-      code: 'MEDICOES_INSUFICIENTES',
+      code: 'CAMPANHA_PARCIAL',
       severity: 'WARNING',
-      title: `Campanha com ${valid.length} medição(ões)`,
-      message: `Foram registradas ${valid.length} de 3 medições. O laudo técnico é emitido com as medições disponíveis.`
+      title: 'Campanha com 2 medições',
+      message: 'Foram registradas 2 de 3 medições do ciclo temporizado. Laudo gerado com a média das medições disponíveis.'
     });
   }
+  // Obs: se valid.length === 1, a medição é validada como Medição Instantânea (após 10 min do fechamento do trafo), plenamente conforme.
+
   const fdLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
   const currentLimit = getDiagnosticRuleValue('current_unbalance_limit_percent', 15.0);
 
@@ -393,7 +395,7 @@ function validateMeasurementData(
         const avgFf = ff.reduce((sum, value) => sum + value, 0) / 3;
         const expectedFf = Math.sqrt(3) * avgFn;
         const ratioError = expectedFf > 0 ? Math.abs(avgFf - expectedFf) / expectedFf : 0;
-        if (impossible.length > 0 || ratioError > 0.05) {
+        if (impossible.length > 0 || ratioError > 0.15) {
           const pairText = impossible.length > 0 ? `; combinação impossível: ${impossible.map((pair) => pair[3]).join(', ')}` : '';
           issues.push({
             measurementId: m.id,
@@ -401,6 +403,14 @@ function validateMeasurementData(
             severity: 'CRITICAL',
             title: `M${m.id}: relação F-N/F-F inconsistente`,
             message: `Média F-N ${avgFn.toFixed(1)} V implica aproximadamente ${expectedFf.toFixed(1)} V F-F em sistema trifásico equilibrado, mas foi informado ${avgFf.toFixed(1)} V${pairText}. Verifique escala, ligação e instrumento.`
+          });
+        } else if (ratioError > 0.05) {
+          issues.push({
+            measurementId: m.id,
+            code: 'RELACAO_TENSAO',
+            severity: 'WARNING',
+            title: `M${m.id}: divergência moderada F-N/F-F`,
+            message: `Média F-N ${avgFn.toFixed(1)} V vs F-F ${avgFf.toFixed(1)} V (diferença de ${(ratioError * 100).toFixed(1)}%). Recomenda-se conferir medição no secundário.`
           });
         }
       }
@@ -423,7 +433,7 @@ function validateMeasurementData(
           issues.push({
             measurementId: m.id,
             code: 'DESEQUILIBRIO_CORRENTE',
-            severity: unbalance > 30 ? 'CRITICAL' : 'WARNING',
+            severity: unbalance > 50 ? 'CRITICAL' : 'WARNING',
             title: `M${m.id}: correntes fortemente desbalanceadas`,
             message: `Ia=${m.ia} A, Ib=${m.ib} A, Ic=${m.ic} A; desvio máximo ${unbalance.toFixed(1)}% (limiar de triagem do app: ${currentLimit.toFixed(0)}%).`
           });
@@ -462,8 +472,10 @@ function validateMeasurementData(
   for (let index = 1; index < times.length; index += 1) {
     let elapsed = times[index].seconds - times[index - 1].seconds;
     if (elapsed < -43200) elapsed += 86400; // virada legítima de meia-noite
-    if (elapsed <= 0) {
-      issues.push({ code: 'CRONOLOGIA', severity: 'CRITICAL', title: 'Ordem temporal inválida', message: `M${times[index].id} (${measurements.find((m) => m.id === times[index].id)?.timestamp}) não é posterior à medição anterior.` });
+    if (elapsed < 0) {
+      issues.push({ code: 'CRONOLOGIA', severity: 'CRITICAL', title: 'Ordem temporal invertida', message: `M${times[index].id} (${measurements.find((m) => m.id === times[index].id)?.timestamp}) é anterior à medição anterior.` });
+    } else if (elapsed === 0) {
+      issues.push({ code: 'CRONOLOGIA_COINCIDENTE', severity: 'WARNING', title: 'Horários coincidentes', message: `M${times[index - 1].id} e M${times[index].id} possuem o mesmo horário gravado. Recomenda-se registrar os horários distintos de cada medição.` });
     } else if (elapsed < expectedSeconds - tolerance) {
       issues.push({ code: 'INTERVALO', severity: 'WARNING', title: 'Intervalo menor que o ciclo selecionado', message: `Intervalo M${times[index - 1].id}→M${times[index].id}: ${elapsed} s; mínimo esperado ${expectedSeconds} s para o ciclo ${cycleMode}.` });
     }
@@ -475,6 +487,8 @@ function validateMeasurementData(
   const canIssueReport = valid.length >= 1 && hasTrafo;
   return {
     status: hasCritical ? 'INCONSISTENTE' : issues.length > 0 ? 'ALERTA' : 'VALIDO',
+    isInstantaneous: valid.length === 1,
+    validMeasurementsCount: valid.length,
     issues,
     canIssueTapRecommendation: canIssueTap,
     canIssueReport: canIssueReport
@@ -492,15 +506,33 @@ function buildTapRecommendation(
   if (!dataQuality.canIssueTapRecommendation) {
     return {
       recommendedTap: 'RECOMENDACAO DE TAP BLOQUEADA',
-      tapAdjustmentAdvice: 'Complete as tres medicoes e corrija todas as inconsistencias criticas antes de alterar o TAP.'
+      tapAdjustmentAdvice: 'Corrija as inconsistencias criticas detectadas nos dados antes de alterar o TAP.'
     };
   }
 
-  const entries = Object.entries(transformer.tapVoltages || {})
+  // Obter tensões de TAP do transformador ou calcular padrão (+5%, +2.5%, Nominal, -2.5%, -5%)
+  let tapVoltages = transformer.tapVoltages;
+  if (!tapVoltages || Object.keys(tapVoltages).length === 0) {
+    const primV = transformer.primaryVoltageV || 13800;
+    tapVoltages = {
+      1: Math.round(primV * 1.05),
+      2: Math.round(primV * 1.025),
+      3: Math.round(primV),
+      4: Math.round(primV * 0.975),
+      5: Math.round(primV * 0.95)
+    };
+  }
+
+  const entries = Object.entries(tapVoltages)
     .map(([position, voltage]) => ({ position: Number(position), voltage: Number(voltage) }))
     .filter((entry) => Number.isInteger(entry.position) && entry.position > 0 && Number.isFinite(entry.voltage) && entry.voltage > 0)
     .sort((a, b) => a.position - b.position);
-  const active = entries.find((entry) => entry.position === transformer.activeTapIndex);
+
+  const activeIndex = transformer.activeTapIndex && entries.some(e => e.position === transformer.activeTapIndex)
+    ? transformer.activeTapIndex
+    : entries.length >= 3 ? Math.ceil(entries.length / 2) : (entries[0]?.position || 1);
+
+  const active = entries.find((entry) => entry.position === activeIndex);
   if (!active || measuredSecondaryV <= 0 || transformer.secondaryVoltageV <= 0) {
     return {
       recommendedTap: 'RECOMENDACAO DE TAP BLOQUEADA',
@@ -537,6 +569,7 @@ function buildTapRecommendation(
     tapAdjustmentAdvice: `Comutar do TAP ${active.position} (${(active.voltage / 1000).toFixed(3)} kV) para o TAP ${best.position}. Tensao secundaria estimada apos a comutacao: ${best.predictedVoltage.toFixed(1)} V (${best.status}). Confirmar procedimento, desenergizacao e regras de seguranca antes da intervencao.`
   };
 }
+
 
 export function performFullDiagnosticAnalysis(
   measurements: SingleMeasurement[],

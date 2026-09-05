@@ -246,7 +246,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões e correntes — adicione de 1 a 3 medições conforme a necessidade do laudo
+              Coleta de tensões e correntes — adicione de 1 a 3 medições (a 1ª medição é aos 10 min pós-fechamento do trafo; 1 medição é validada como medição instantânea)
             </p>
             {cycleMode === '5s' && (
               <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
@@ -322,7 +322,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   1
                 </span>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  1ª Medição (T = 0 min)
+                  1ª Medição (T = {cycleMode === '5s' ? '5 seg' : '10 min pós-fechamento'})
                 </h3>
               </div>
               <div className="flex items-center gap-1.5">
@@ -510,7 +510,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   2
                 </span>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  2ª Medição (T = {cycleMode === '5s' ? '5 seg' : '10 min'})
+                  2ª Medição (T = {cycleMode === '5s' ? '10 seg' : '20 min'})
                 </h3>
               </div>
 
@@ -741,7 +741,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   3
                 </span>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  3ª Medição (T = {cycleMode === '5s' ? '10 seg' : '20 min'})
+                  3ª Medição (T = {cycleMode === '5s' ? '15 seg' : '30 min'})
                 </h3>
               </div>
 

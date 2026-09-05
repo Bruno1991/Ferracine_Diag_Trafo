@@ -93,8 +93,23 @@ export async function generateTransformerDiagnosticPdf({
   const accentColor = [2, 132, 199]; // sky-600
   const fdLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
   const voltageRange = getOfflineProdistVoltageRanges().find((range) => range.connection === 'FF' && Math.abs(range.nominalV - transformer.secondaryVoltageV) < 0.01);
-  const cycleDescription = cycleMode === '5s' ? '5 segundos (Modo de Teste)' : '10 minutos (Operação de Fato)';
-  const measurementOffset = (id: number) => cycleMode === '5s' ? `${(id - 1) * 5} s` : `${(id - 1) * 10} min`;
+  const recordedMeas = measurements.filter((m) =>
+    m.isRecorded === true || m.van > 0 || m.vab > 0 || m.ia > 0
+  );
+  const activeMeas = recordedMeas.length > 0 ? recordedMeas : [measurements[0]];
+  const isInstantaneous = activeMeas.length === 1;
+  const cycleDescription = cycleMode === '5s'
+    ? '5 segundos (Modo de Teste)'
+    : isInstantaneous
+      ? '10 minutos (Medição Instantânea pós-fechamento)'
+      : '10 minutos (Operação de Fato)';
+  const measurementOffset = (id: number) => {
+    if (cycleMode === '5s') return `${(id - 1) * 5} s`;
+    if (id === 1) return '10 min pós-fechamento';
+    if (id === 2) return '20 min';
+    if (id === 3) return '30 min';
+    return `${id * 10} min`;
+  };
 
   // Header Builder - Matches App Header
   const drawHeader = (title: string, pageNum: number) => {
@@ -183,18 +198,13 @@ export async function generateTransformerDiagnosticPdf({
     });
   }
 
-  // 2. Equipe
-  if (initialData.equipe?.trim()) {
-    idRows.push({ left: `Equipe: ${initialData.equipe.trim()}` });
-  }
-
-  // 3. Concessionária e TAG
+  // 2. Equipe e Concessionária
+  const equipe = initialData.equipe?.trim();
   const conc = initialData.concessionaria?.trim();
-  const tag = initialData.transformerTag?.trim();
-  if (conc || tag) {
+  if (equipe || conc) {
     idRows.push({
-      left: conc ? `Concessionária: ${conc}` : (tag ? `TAG / Nº Trafo: ${tag}` : ''),
-      right: (conc && tag) ? `TAG / Nº Trafo: ${tag}` : undefined
+      left: equipe ? `Equipe: ${equipe}` : (conc ? `Concessionária: ${conc}` : ''),
+      right: (equipe && conc) ? `Concessionária: ${conc}` : undefined
     });
   }
 
@@ -262,13 +272,31 @@ export async function generateTransformerDiagnosticPdf({
     specRows.push({ left: pwr, right: volt });
   }
 
+  const tag = (initialData.transformerTag || (transformer as any).tag)?.trim();
   const brand = (transformer.brand || initialData.transformerBrand)?.trim();
   const serial = (transformer.serialNumber || initialData.serialNumber)?.trim();
-  if (brand || serial) {
-    specRows.push({
-      left: brand ? `Marca: ${brand}` : (serial ? `Nº de Série: ${serial}` : ''),
-      right: (brand && serial) ? `Nº de Série: ${serial}` : undefined
-    });
+
+  if (tag || brand || serial) {
+    if (tag && brand && serial) {
+      specRows.push({
+        left: `TAG / Nº Trafo: ${tag}`,
+        right: `Marca: ${brand} | Nº Série: ${serial}`
+      });
+    } else if (tag && (brand || serial)) {
+      specRows.push({
+        left: `TAG / Nº Trafo: ${tag}`,
+        right: brand ? `Marca: ${brand}` : `Nº de Série: ${serial}`
+      });
+    } else if (tag) {
+      specRows.push({
+        left: `TAG / Nº Trafo: ${tag}`
+      });
+    } else {
+      specRows.push({
+        left: brand ? `Marca: ${brand}` : (serial ? `Nº de Série: ${serial}` : ''),
+        right: (brand && serial) ? `Nº de Série: ${serial}` : undefined
+      });
+    }
   }
 
   const imp = transformer.impedancePercent > 0 ? `Impedância de Placa (%Z): ${transformer.impedancePercent}%` : '';
@@ -297,7 +325,7 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('2. ESPECIFICAÇÕES NOMINAIS DA PLACA DO TRANSFORMADOR', margin + 4, currentY + 6);
+  doc.text('2. DADOS E ESPECIFICAÇÕES NOMINAIS DO TRANSFORMADOR', margin + 4, currentY + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -354,13 +382,21 @@ export async function generateTransformerDiagnosticPdf({
         'Recomendação de Posição de TAP',
         analysis.recommendedTap,
         'Comutação de Tensão Secundária',
-        !analysis.dataQuality.canIssueTapRecommendation ? 'BLOQUEADO' : analysis.prodist.voltageStatus === 'ADEQUADA' ? 'Manter TAP' : 'Requer Ajuste'
+        !analysis.dataQuality.canIssueTapRecommendation
+          ? 'BLOQUEADO'
+          : analysis.prodist.voltageStatus === 'ADEQUADA'
+            ? 'Manter TAP'
+            : 'Requer Ajuste'
       ],
       [
         'Qualidade / Coerência dos Dados',
-        `${analysis.dataQuality.status} (${analysis.dataQuality.issues.length} ocorrência(s))`,
-        `Ciclo: ${cycleDescription}`,
-        analysis.dataQuality.status
+        isInstantaneous && analysis.dataQuality.status === 'VALIDO'
+          ? 'VÁLIDO (Medição Instantânea)'
+          : `${analysis.dataQuality.status} (${analysis.dataQuality.issues.length} ocorrência(s))`,
+        isInstantaneous
+          ? 'Medição Instantânea (10 min pós-fechamento)'
+          : `Ciclo: ${cycleDescription}`,
+        analysis.dataQuality.status === 'VALIDO' ? 'ADEQUADA' : analysis.dataQuality.status
       ],
       [
         'Eficiência Operacional Calculada',
@@ -383,7 +419,7 @@ export async function generateTransformerDiagnosticPdf({
     didParseCell: (data) => {
       if (data.section === 'body' && data.column.index === 3) {
         const val = data.cell.raw?.toString() || '';
-        if (val === 'ADEQUADA' || val === 'ADEQUADO' || val === 'IDEAL' || val === 'Coordenado') {
+        if (val === 'ADEQUADA' || val === 'ADEQUADO' || val === 'IDEAL' || val === 'Coordenado' || val === 'Manter TAP' || val.includes('VÁLIDO')) {
           data.cell.styles.textColor = [22, 163, 74];
           data.cell.styles.fontStyle = 'bold';
         } else if (val === 'PRECARIA' || val === 'PRECARIO' || val === 'ELEVADO' || val === 'Requer Ajuste') {
@@ -408,7 +444,7 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text(`4. MEDIÇÕES DE CAMPO — CICLO ${cycleDescription}`, margin, currentY);
+  doc.text(`4. MEDIÇÕES DE CAMPO — ${isInstantaneous ? 'MEDIÇÃO INSTANTÂNEA (10 min pós-fechamento)' : `CICLO ${cycleDescription}`}`, margin, currentY);
 
   if (cycleMode === '5s') {
     doc.setFont('helvetica', 'bold');
@@ -421,12 +457,6 @@ export async function generateTransformerDiagnosticPdf({
   currentY += 4;
 
   const isTri = transformer.phaseType === 'TRIFASICO';
-
-  // Apenas medições registradas ou com dados preenchidos são exibidas (omite medições não realizadas)
-  const recordedMeas = measurements.filter((m) =>
-    m.isRecorded === true || m.van > 0 || m.vab > 0 || m.ia > 0
-  );
-  const activeMeas = recordedMeas.length > 0 ? recordedMeas : [measurements[0]];
 
   const rowsMeas = activeMeas.map((m) => [
     `M${m.id} (T=${measurementOffset(m.id)})`,

@@ -223,20 +223,25 @@ export interface DiagnosticAnalysis {
   cycleMode: MeasurementCycleMode;
   dataQuality: {
     status: 'VALIDO' | 'ALERTA' | 'INCONSISTENTE';
+    isInstantaneous?: boolean;
+    validMeasurementsCount?: number;
     issues: Array<{
       measurementId?: number;
       code:
         | 'TRANSFORMADOR_INCOMPLETO'
         | 'MEDICAO_INCOMPLETA'
         | 'MEDICOES_INSUFICIENTES'
+        | 'CAMPANHA_PARCIAL'
         | 'CRONOLOGIA'
+        | 'CRONOLOGIA_COINCIDENTE'
         | 'INTERVALO'
         | 'RELACAO_TENSAO'
         | 'TENSAO_PRODIST'
         | 'FDTP'
         | 'DESEQUILIBRIO_CORRENTE'
         | 'CORRENTE_NEUTRO'
-        | 'CARREGAMENTO';
+        | 'CARREGAMENTO'
+        | 'MEDICAO_INSTANTANEA';
       severity: 'CRITICAL' | 'WARNING';
       title: string;
       message: string;

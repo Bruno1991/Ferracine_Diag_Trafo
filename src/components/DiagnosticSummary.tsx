@@ -51,7 +51,15 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         }`}>
           <div className="flex items-center gap-2 text-xs font-bold uppercase">
             <AlertOctagon className="w-4 h-4" />
-            <span>Qualidade dos dados: {analysis.dataQuality.status} — ciclo {analysis.cycleMode === '5s' ? '5 s (modo de teste)' : analysis.cycleMode}</span>
+            <span>
+              Qualidade dos dados: {analysis.dataQuality.status} — {
+                analysis.cycleMode === '5s'
+                  ? 'ciclo 5 s (modo de teste)'
+                  : analysis.dataQuality.isInstantaneous
+                    ? 'Medição Instantânea (10 min pós-fechamento)'
+                    : 'ciclo 10 minutos (operação de fato)'
+              }
+            </span>
           </div>
           {analysis.dataQuality.issues.length === 0 ? (
             <p className="text-[11px] font-mono">Nenhuma inconsistência detectada nas medições informadas.</p>
