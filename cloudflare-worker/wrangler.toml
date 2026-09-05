@@ -1,0 +1,13 @@
+name = "ferracine-diag-trafo-sync"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+[vars]
+GITHUB_OWNER = "Bruno1991"
+GITHUB_REPO = "Ferracine_Diag_Trafo"
+GITHUB_BRANCH = "main"
+
+# O token GITHUB_TOKEN NUNCA deve ser colocado neste arquivo!
+# Defina o token como secret usando o comando:
+# npx wrangler secret put GITHUB_TOKEN
+# Ou diretamente pelo painel da Cloudflare (Settings > Variables and Secrets).

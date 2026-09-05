@@ -6,15 +6,16 @@ import {
 } from './sqliteAndSplitLoader';
 
 const GITHUB_API = 'https://api.github.com';
-const GITHUB_API_VERSION = '2026-03-10';
+const GITHUB_API_VERSION = '2022-11-28';
 
 export interface GitHubSyncConfig {
-  token: string;
-  owner: string;
-  repo: string;
-  branch: string;
-  transformerPath: string;
-  databasePath: string;
+  workerUrl?: string;
+  token?: string;
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  transformerPath?: string;
+  databasePath?: string;
 }
 
 export interface GitHubSyncResult {
@@ -39,14 +40,15 @@ class GitHubRequestError extends Error {
   }
 }
 
-function normalizedConfig(config: GitHubSyncConfig): GitHubSyncConfig {
+function normalizedConfig(config: GitHubSyncConfig): Required<GitHubSyncConfig> {
   return {
-    token: config.token.trim(),
-    owner: config.owner.trim(),
-    repo: config.repo.trim(),
-    branch: config.branch.trim() || 'main',
-    transformerPath: config.transformerPath.trim() || 'database/transformador-db.json',
-    databasePath: config.databasePath.trim() || 'public/database/ferracine-trafo.sqlite'
+    workerUrl: (config.workerUrl || '').trim(),
+    token: (config.token || '').trim(),
+    owner: (config.owner || 'Bruno1991').trim(),
+    repo: (config.repo || 'Ferracine_Diag_Trafo').trim(),
+    branch: (config.branch || 'main').trim(),
+    transformerPath: (config.transformerPath || 'database/transformador-db.json').trim(),
+    databasePath: (config.databasePath || 'public/database/ferracine-trafo.sqlite').trim()
   };
 }
 
@@ -54,15 +56,15 @@ function encodedPath(path: string): string {
   return path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
 }
 
-function contentUrl(config: GitHubSyncConfig, path: string, includeRef = true): string {
+function contentUrl(config: Required<GitHubSyncConfig>, path: string, includeRef = true): string {
   const base = `${GITHUB_API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${encodedPath(path)}`;
   return includeRef ? `${base}?ref=${encodeURIComponent(config.branch)}` : base;
 }
 
-function githubHeaders(config: GitHubSyncConfig, accept = 'application/vnd.github+json'): HeadersInit {
+function githubHeaders(config: Required<GitHubSyncConfig>, accept = 'application/vnd.github+json'): HeadersInit {
   return {
     Accept: accept,
-    Authorization: `Bearer ${config.token}`,
+    ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
     'X-GitHub-Api-Version': GITHUB_API_VERSION
   };
 }
@@ -92,14 +94,14 @@ function encodeTextBase64(text: string): string {
   return encodeBytesBase64(new TextEncoder().encode(text));
 }
 
-async function getMetadata(config: GitHubSyncConfig, path: string): Promise<GitHubContentMetadata | null> {
+async function getMetadata(config: Required<GitHubSyncConfig>, path: string): Promise<GitHubContentMetadata | null> {
   const response = await fetch(contentUrl(config, path), { headers: githubHeaders(config) });
   if (response.status === 404) return null;
   if (!response.ok) throw await githubError(response, `Falha ao consultar ${path} no GitHub.`);
   return await response.json() as GitHubContentMetadata;
 }
 
-async function getRawBytes(config: GitHubSyncConfig, path: string): Promise<Uint8Array> {
+async function getRawBytes(config: Required<GitHubSyncConfig>, path: string): Promise<Uint8Array> {
   const response = await fetch(contentUrl(config, path), {
     headers: githubHeaders(config, 'application/vnd.github.raw+json')
   });
@@ -108,7 +110,7 @@ async function getRawBytes(config: GitHubSyncConfig, path: string): Promise<Uint
 }
 
 async function readCommunityFile(
-  config: GitHubSyncConfig
+  config: Required<GitHubSyncConfig>
 ): Promise<{ sha: string | null; transformers: TransformerSpec[] }> {
   const metadata = await getMetadata(config, config.transformerPath);
   if (!metadata) return { sha: null, transformers: [] };
@@ -130,7 +132,7 @@ function finiteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeCommunityTransformer(value: unknown): TransformerSpec | null {
+export function normalizeCommunityTransformer(value: unknown): TransformerSpec | null {
   if (!value || typeof value !== 'object') return null;
   const item = value as Partial<TransformerSpec>;
   if (!item.id || typeof item.id !== 'string') return null;
@@ -194,7 +196,7 @@ function stableCommunityJson(transformers: TransformerSpec[]): string {
 }
 
 async function putCommunityFile(
-  config: GitHubSyncConfig,
+  config: Required<GitHubSyncConfig>,
   transformers: TransformerSpec[],
   sha: string | null
 ): Promise<void> {
@@ -216,7 +218,16 @@ async function putCommunityFile(
 
 export async function testGitHubConnection(input: GitHubSyncConfig): Promise<string> {
   const config = normalizedConfig(input);
-  if (!config.token || !config.owner || !config.repo) throw new Error('Informe token, proprietario e repositorio.');
+  if (config.workerUrl) {
+    const res = await fetch(`${config.workerUrl.replace(/\/+$/, '')}/health`);
+    if (res.ok) return `Cloudflare Worker (${config.workerUrl})`;
+  }
+  if (!config.token) {
+    const response = await fetch(`${GITHUB_API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`);
+    if (!response.ok) throw await githubError(response, 'Nao foi possivel acessar o repositorio publico.');
+    const repository = await response.json() as { full_name?: string };
+    return `${repository.full_name || `${config.owner}/${config.repo}`} (Acesso Publico)`;
+  }
   const response = await fetch(
     `${GITHUB_API}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`,
     { headers: githubHeaders(config) }
@@ -226,24 +237,146 @@ export async function testGitHubConnection(input: GitHubSyncConfig): Promise<str
   return `${repository.full_name || `${config.owner}/${config.repo}`} (${repository.private ? 'privado' : 'publico'})`;
 }
 
-export async function syncWithGitHub(
-  input: GitHubSyncConfig,
+/**
+ * Sincronização via Cloudflare Worker (Segura, sem token no cliente)
+ */
+async function syncViaCloudflareWorker(
+  workerUrl: string,
   localTransformers: TransformerSpec[]
 ): Promise<GitHubSyncResult> {
-  const config = normalizedConfig(input);
-  if (!config.token || !config.owner || !config.repo) throw new Error('Configuracao do GitHub incompleta.');
+  const localCommunity = localTransformers
+    .filter(isCommunityTransformer)
+    .map(normalizeCommunityTransformer)
+    .filter((item): item is TransformerSpec => item !== null);
 
+  const lastSha = localStorage.getItem('tx_github_database_sha') || '';
+  const cleanUrl = workerUrl.replace(/\/+$/, '');
+
+  const response = await fetch(`${cleanUrl}/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      communityTransformers: localCommunity,
+      lastDatabaseSha: lastSha
+    })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Erro ${response.status} retornado pelo Cloudflare Worker.`);
+  }
+
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(data.error || 'Falha na resposta do Cloudflare Worker.');
+  }
+
+  let normativeTransformers: TransformerSpec[] | null = null;
+  let databaseUpdated = false;
+  const warnings: string[] = [];
+
+  if (data.databaseSha && (data.databaseSha !== lastSha || getOfflineDatabaseStatus().source !== 'REMOTE')) {
+    try {
+      const downloadUrl = data.databaseDownloadUrl || 'https://raw.githubusercontent.com/Bruno1991/Ferracine_Diag_Trafo/main/public/database/ferracine-trafo.sqlite';
+      const dbRes = await fetch(downloadUrl);
+      if (dbRes.ok) {
+        const dbBytes = new Uint8Array(await dbRes.arrayBuffer());
+        normativeTransformers = await installRemoteOfflineDatabase(dbBytes);
+        databaseUpdated = true;
+        localStorage.setItem('tx_github_database_sha', data.databaseSha);
+      }
+    } catch {
+      warnings.push('Não foi possível atualizar o banco SQLite nesta tentativa.');
+    }
+  }
+
+  const rawCommunity: unknown[] = Array.isArray(data.communityTransformers) ? data.communityTransformers : [];
+  const finalCommunity = rawCommunity
+    .map(normalizeCommunityTransformer)
+    .filter((item): item is TransformerSpec => item !== null);
+
+  return {
+    communityTransformers: finalCommunity,
+    normativeTransformers,
+    databaseStatus: getOfflineDatabaseStatus(),
+    uploadedCount: data.uploadedCount ?? (data.committed ? localCommunity.length : 0),
+    downloadedCount: data.downloadedCount ?? Math.max(0, finalCommunity.length - localCommunity.length),
+    databaseUpdated,
+    warnings
+  };
+}
+
+/**
+ * Sincronização via Acesso Público Direto (Download de placas e banco oficial sem token)
+ */
+async function syncViaPublicRaw(
+  owner: string,
+  repo: string,
+  branch: string,
+  localTransformers: TransformerSpec[]
+): Promise<GitHubSyncResult> {
+  const localCommunity = localTransformers
+    .filter(isCommunityTransformer)
+    .map(normalizeCommunityTransformer)
+    .filter((item): item is TransformerSpec => item !== null);
+
+  let remoteCommunity: TransformerSpec[] = [];
+  try {
+    const platesRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/database/transformador-db.json?t=${Date.now()}`);
+    if (platesRes.ok) {
+      const parsed = await platesRes.json();
+      if (Array.isArray(parsed)) {
+        remoteCommunity = parsed.map(normalizeCommunityTransformer).filter((item): item is TransformerSpec => item !== null);
+      }
+    }
+  } catch {
+    // Falha silenciosa
+  }
+
+  const finalCommunity = mergeCommunityTransformers(remoteCommunity, localCommunity);
+
+  let normativeTransformers: TransformerSpec[] | null = null;
+  let databaseUpdated = false;
+  const warnings: string[] = [];
+
+  try {
+    const dbRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/public/database/ferracine-trafo.sqlite?t=${Date.now()}`);
+    if (dbRes.ok) {
+      const dbBytes = new Uint8Array(await dbRes.arrayBuffer());
+      normativeTransformers = await installRemoteOfflineDatabase(dbBytes);
+      databaseUpdated = true;
+    }
+  } catch {
+    warnings.push('Não foi possível obter a versão mais recente do SQLite.');
+  }
+
+  return {
+    communityTransformers: finalCommunity,
+    normativeTransformers,
+    databaseStatus: getOfflineDatabaseStatus(),
+    uploadedCount: 0,
+    downloadedCount: Math.max(0, finalCommunity.length - localCommunity.length),
+    databaseUpdated,
+    warnings
+  };
+}
+
+/**
+ * Sincronização Legada via GitHub API com Token
+ */
+async function syncViaLegacyGitHubApi(
+  config: Required<GitHubSyncConfig>,
+  localTransformers: TransformerSpec[]
+): Promise<GitHubSyncResult> {
   const localCommunity = localTransformers
     .filter(isCommunityTransformer)
     .map(normalizeCommunityTransformer)
     .filter((item): item is TransformerSpec => item !== null);
 
   let finalCommunity: TransformerSpec[] = [];
-  let remoteBeforeCount = 0;
   let pushed = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const remote = await readCommunityFile(config);
-    remoteBeforeCount = remote.transformers.length;
     finalCommunity = mergeCommunityTransformers(remote.transformers, localCommunity);
     const changed = stableCommunityJson(finalCommunity) !== stableCommunityJson(remote.transformers);
     if (!changed) break;
@@ -289,4 +422,29 @@ export async function syncWithGitHub(
     databaseUpdated,
     warnings
   };
+}
+
+export async function syncWithGitHub(
+  input: GitHubSyncConfig,
+  localTransformers: TransformerSpec[]
+): Promise<GitHubSyncResult> {
+  const config = normalizedConfig(input);
+  const workerUrl = config.workerUrl || localStorage.getItem('tx_worker_sync_url') || (import.meta as any).env?.VITE_WORKER_SYNC_URL;
+
+  // 1. Tenta Cloudflare Worker se disponível
+  if (workerUrl) {
+    try {
+      return await syncViaCloudflareWorker(workerUrl, localTransformers);
+    } catch (err) {
+      console.warn('Worker sync indisponível, usando fallback seguro:', err);
+    }
+  }
+
+  // 2. Se houver token configurado
+  if (config.token) {
+    return syncViaLegacyGitHubApi(config, localTransformers);
+  }
+
+  // 3. Fallback: Sincronização pública (download de placas e SQLite oficial sem token)
+  return syncViaPublicRaw(config.owner, config.repo, config.branch, localTransformers);
 }
