@@ -1,0 +1,8 @@
+name = "ferracine-diag-trafo-sync"
+main = "cloudflare-worker/worker.js"
+compatibility_date = "2024-09-01"
+
+[vars]
+GITHUB_OWNER = "Bruno1991"
+GITHUB_REPO = "Ferracine_Diag_Trafo"
+GITHUB_BRANCH = "main"
