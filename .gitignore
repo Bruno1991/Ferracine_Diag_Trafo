@@ -1,0 +1,28 @@
+# Environment & Secrets
+.env
+*.env
+.env.*
+!.env.example
+
+# Engineering Library (lives in C:/dev root)
+engineering-library/
+Biblioteca_Universal_Corporativa/
+
+# Node / JS
+node_modules/
+.pnpm-store/
+build/
+dist/
+output/
+tmp/
+coverage/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.pdf
+pdf_scan_summary.json
