@@ -511,17 +511,42 @@ export function classifyProdistVoltage(
   nominalVoltageV: number,
   connection: 'FF' | 'FN' = 'FF'
 ): { status: 'ADEQUADA' | 'PRECARIA' | 'CRITICA'; range: ProdistVoltageRange } | null {
-  const range = cachedVoltageRanges.find(
-    (candidate) => candidate.connection === connection && Math.abs(candidate.nominalV - nominalVoltageV) < 0.01
+  if (measuredVoltageV <= 0 || nominalVoltageV <= 0) return null;
+
+  let range: ProdistVoltageRange | undefined = cachedVoltageRanges.find(
+    (candidate) => candidate.connection === connection && Math.abs(candidate.nominalV - nominalVoltageV) < 1.0
   );
-  if (!range || measuredVoltageV <= 0) return null;
-  if (measuredVoltageV >= range.adequateMinV && measuredVoltageV <= range.adequateMaxV) {
-    return { status: 'ADEQUADA', range };
+
+  // Fallback analítico oficial PRODIST Módulo 8 da ANEEL (0.92 a 1.05 = Adequada; 0.87 a 1.06 = Precária)
+  if (!range) {
+    const adequateMinV = Math.round(nominalVoltageV * 0.92);
+    const adequateMaxV = Math.round(nominalVoltageV * 1.05);
+    const precariousLowMinV = Math.round(nominalVoltageV * 0.87);
+    const precariousHighMaxV = Math.round(nominalVoltageV * 1.06);
+
+    range = {
+      system: `${nominalVoltageV}V ${connection}`,
+      connection,
+      nominalV: nominalVoltageV,
+      adequateMinV,
+      adequateMaxV,
+      precariousLowMinV,
+      precariousHighMaxV,
+      criticalLowBelowV: precariousLowMinV,
+      criticalHighAboveV: precariousHighMaxV,
+      sourcePage: 1
+    };
   }
-  if (measuredVoltageV >= range.precariousLowMinV && measuredVoltageV <= range.precariousHighMaxV) {
-    return { status: 'PRECARIA', range };
+
+  const effectiveRange: ProdistVoltageRange = range;
+
+  if (measuredVoltageV >= effectiveRange.adequateMinV && measuredVoltageV <= effectiveRange.adequateMaxV) {
+    return { status: 'ADEQUADA', range: effectiveRange };
   }
-  return { status: 'CRITICA', range };
+  if (measuredVoltageV >= effectiveRange.precariousLowMinV && measuredVoltageV <= effectiveRange.precariousHighMaxV) {
+    return { status: 'PRECARIA', range: effectiveRange };
+  }
+  return { status: 'CRITICA', range: effectiveRange };
 }
 
 export function findFuseInOfflineDatabase(

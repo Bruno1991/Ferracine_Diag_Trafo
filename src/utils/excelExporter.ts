@@ -148,7 +148,7 @@ export function exportDiagnosticToExcel({
     ['Detalhamento de Tensão', analysis.prodist.voltageClassificationText, 'ANEEL Módulo 8', analysis.prodist.voltageStatus],
     ['Fator de Desbalanço FDTP', `${analysis.prodist.fdtpPercent} %`, `FDTP <= ${fdLimit}% (BT)`, analysis.prodist.unbalanceStatus],
     ['Carregamento Médio kVA', `${analysis.maxKvaMeasured} kVA`, `Capacidade: ${transformer.powerKva} kVA`, `${analysis.maxLoadingPercent}%`],
-    ['Carregamento de Pico por Fase', analysis.criticalPhase ? `${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase})` : `${analysis.maxLoadingPercent}%`, `Corrente Nominal = ${analysis.nominalCurrentSecondaryA} A`, analysis.loadingCondition.replace('_', ' ')],
+    ['Carregamento de Pico por Fase', analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase})` : `${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% (Trifásico)`, `Corrente Nominal = ${analysis.nominalCurrentSecondaryA} A`, analysis.loadingCondition.replace('_', ' ')],
     ['Condição de Carga (Térmica / NDU 006)', analysis.loadingCondition.replace('_', ' '), 'Análise Térmica NBR 5356-7', 'Operacional'],
     ['Elo Fusível Primário Recomendado', analysis.recommendedFuse?.fuseCode || 'N/A', analysis.recommendedFuse?.sourceDocument || 'Sem correspondência', analysis.recommendedFuse?.sourceTable || 'Verificar'],
     ['Posição Recomendada para TAP', analysis.recommendedTap, 'Comutação Sob Carga/Sem Carga', 'Ajuste Recomendado'],

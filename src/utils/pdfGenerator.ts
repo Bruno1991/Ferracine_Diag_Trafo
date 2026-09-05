@@ -349,9 +349,9 @@ export async function generateTransformerDiagnosticPdf({
       ],
       [
         'Carregamento Máximo (% Corrente Nominal / kVA)',
-        analysis.criticalPhase
+        analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO'
           ? `Pico ${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase}) | Média ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`
-          : `Pico ${analysis.maxLoadingPercent}% | Média ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
+          : `Pico ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% (Trifásico) | Média ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
         `Corrente Nominal = ${analysis.nominalCurrentSecondaryA} A | NDU 006 / NBR 5356-7`,
         analysis.loadingCondition.replace('_', ' ')
       ],
@@ -546,7 +546,7 @@ export async function generateTransformerDiagnosticPdf({
 
   const summaryLines = [
     `• RESUMO GERAL DO ESTADO DO TRANSFORMADOR:`,
-    `  Condição Operacional: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase || 'C'}` : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`,
+    `  Condição Operacional: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA CRÍTICA TRIFÁSICA') : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`,
     `  Tensão e Qualidade PRODIST Módulo 8: Tensão média medida de ${analysis.overallAvgPhasePhaseV} V (Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
     `  Eficiência sob Carga: ${analysis.calculatedEfficiencyPercent}% | Perdas Totais Calculadas: ${analysis.totalCalculatedLossW} W (Perdas no Ferro P0: ${analysis.estimatedIronLossW} W + Perdas no Cobre Pk: ${analysis.estimatedCopperLossW} W).`,
     `  TAP em Operação e Ajuste: ${analysis.recommendedTap}. ${analysis.tapAdjustmentAdvice}`,
@@ -563,10 +563,15 @@ export async function generateTransformerDiagnosticPdf({
   }
 
   if ((analysis.maxPhaseLoadingPercent || 0) > 100) {
+    const isCriticalPhase = analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO';
     summaryLines.push(
       `• ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7):`,
-      `  ATENÇÃO: A Fase ${analysis.criticalPhase || 'C'} opera a ${analysis.maxPhaseLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A nominais).`,
-      `  Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase ${analysis.criticalPhase || 'C'} para as demais fases.`
+      isCriticalPhase
+        ? `  ATENÇÃO: A Fase ${analysis.criticalPhase} opera a ${analysis.maxPhaseLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A nominais).`
+        : `  ATENÇÃO: O transformador opera a ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A nominais).`,
+      isCriticalPhase
+        ? `  Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase ${analysis.criticalPhase} para as demais fases.`
+        : `  Sobrecargas elevadas causam aquecimento excessivo e envelhecimento acelerado do transformador. É recomendado o remanejamento de carga ou aumento de capacidade nominal.`
     );
   }
 

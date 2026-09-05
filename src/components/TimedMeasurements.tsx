@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Timer, Lock, Unlock, Play, Pause, Trash2, Clock, CheckCircle2 } from 'lucide-react';
+import { Timer, Unlock, Play, Pause, Trash2, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
-import { isMeasurementComplete, processSingleMeasurement } from '../utils/electricalCalculations';
+import { getMissingMeasurementFields, processSingleMeasurement } from '../utils/electricalCalculations';
 
 interface TimedMeasurementsProps {
   measurements: SingleMeasurement[];
@@ -44,44 +44,46 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
 }) => {
   const isTri = selectedTransformer.phaseType === 'TRIFASICO';
 
-  // Verifica se já existem dados pré-existentes nas medições (ex: draft restaurado)
-  const hasM1Data = Boolean(
-    measurements[0]?.isRecorded ||
-    (measurements[0]?.van || 0) > 0 ||
-    (measurements[0]?.vab || 0) > 0 ||
-    (measurements[0]?.ia || 0) > 0
-  );
-  const hasM2Data = Boolean(
-    measurements[1]?.isRecorded ||
-    (measurements[1]?.van || 0) > 0 ||
-    (measurements[1]?.vab || 0) > 0 ||
-    (measurements[1]?.ia || 0) > 0
-  );
-  const hasM3Data = Boolean(
-    measurements[2]?.isRecorded ||
-    (measurements[2]?.van || 0) > 0 ||
-    (measurements[2]?.vab || 0) > 0 ||
-    (measurements[2]?.ia || 0) > 0
-  );
+  // Estados de liberação de cada medição (M1, M2, M3)
+  // TODAS as células iniciam estritamente ocultas, exceto se já foram validadas/registradas anteriormente (draft)
+  const [unlocked, setUnlocked] = useState<boolean[]>(() => [
+    Boolean(measurements[0]?.isRecorded),
+    Boolean(measurements[1]?.isRecorded),
+    Boolean(measurements[2]?.isRecorded)
+  ]);
 
-  // Estados de liberação de cada medição (M1, M2, M3) — células ficam 100% ocultas se false
-  const [unlocked, setUnlocked] = useState<boolean[]>([hasM1Data, hasM2Data, hasM3Data]);
-
-  // Se receber dados existentes posteriormente (ex: restauração de draft assíncrona), desbloqueia
+  // Se receber restauração de rascunho onde medições já foram gravadas, ou limpeza geral
   useEffect(() => {
+    const allClean = measurements.every(
+      (m) => !m.isRecorded && (m.van || 0) === 0 && (m.vab || 0) === 0 && (m.ia || 0) === 0
+    );
+    if (allClean) {
+      setUnlocked([false, false, false]);
+      setCountdownTarget(0);
+      setIsTimerRunning(false);
+      return;
+    }
+
     setUnlocked((prev) => [
-      prev[0] || hasM1Data,
-      prev[1] || hasM2Data,
-      prev[2] || hasM3Data
+      prev[0] || Boolean(measurements[0]?.isRecorded),
+      prev[1] || Boolean(measurements[1]?.isRecorded),
+      prev[2] || Boolean(measurements[2]?.isRecorded)
     ]);
-  }, [hasM1Data, hasM2Data, hasM3Data]);
+  }, [measurements]);
 
   // Cronômetro Central
   // countdownTarget: 0 para M1 (pós-fechamento), 1 para M2, 2 para M3, ou null se nenhum ativo
-  const initialTarget = !hasM1Data ? 0 : (measurements.length >= 2 && !hasM2Data) ? 1 : (measurements.length === 3 && !hasM3Data) ? 2 : null;
-  const [countdownTarget, setCountdownTarget] = useState<number | null>(initialTarget);
+  const getInitialTarget = (): number | null => {
+    if (!measurements[0]?.isRecorded) return 0;
+    if (measurements.length >= 2 && !measurements[1]?.isRecorded) return 1;
+    if (measurements.length === 3 && !measurements[2]?.isRecorded) return 2;
+    return null;
+  };
+
+  const [countdownTarget, setCountdownTarget] = useState<number | null>(getInitialTarget);
   const [timerSeconds, setTimerSeconds] = useState<number>(() => getCycleDurationSeconds(cycleMode));
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
+  const [validationMsg, setValidationMsg] = useState<{ index: number; text: string; isError: boolean } | null>(null);
 
   // Quando o usuário altera o ciclo e o timer não estiver rodando, ajusta os segundos
   const prevCycleModeRef = useRef<MeasurementCycleMode>(cycleMode);
@@ -113,7 +115,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
         });
         setCountdownTarget(null);
 
-        // Se desbloqueou M2 ou M3, garante que isLocked fique false na medição
+        // Garante que isLocked fique false na medição desbloqueada
         if (measurements[target]) {
           onChangeMeasurement(target, {
             ...measurements[target],
@@ -124,35 +126,6 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     }
     return () => clearInterval(interval);
   }, [isTimerRunning, timerSeconds, countdownTarget, measurements, onChangeMeasurement]);
-
-  // Regra automática: assim que o usuário preenche todos os dados coletados de tensão e corrente da medição atual,
-  // se houver medição seguinte na campanha, inicia automaticamente o contador para ela!
-  const hasTriggeredM2Ref = useRef<boolean>(false);
-  const hasTriggeredM3Ref = useRef<boolean>(false);
-
-  useEffect(() => {
-    // Para M2 (se campanha tiver 2 ou 3 testes)
-    if (measurements.length >= 2 && unlocked[0] && !unlocked[1] && !hasTriggeredM2Ref.current) {
-      const m1Complete = isMeasurementComplete(measurements[0], selectedTransformer);
-      if (m1Complete) {
-        hasTriggeredM2Ref.current = true;
-        setCountdownTarget(1);
-        setTimerSeconds(getCycleDurationSeconds(cycleMode));
-        setIsTimerRunning(true);
-      }
-    }
-
-    // Para M3 (se campanha tiver 3 testes)
-    if (measurements.length === 3 && unlocked[1] && !unlocked[2] && !hasTriggeredM3Ref.current) {
-      const m2Complete = isMeasurementComplete(measurements[1], selectedTransformer);
-      if (m2Complete) {
-        hasTriggeredM3Ref.current = true;
-        setCountdownTarget(2);
-        setTimerSeconds(getCycleDurationSeconds(cycleMode));
-        setIsTimerRunning(true);
-      }
-    }
-  }, [measurements, unlocked, selectedTransformer, cycleMode]);
 
   // Controles do Cronômetro Central
   const handleStartTimer = () => {
@@ -174,7 +147,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
 
   const handleBypassUnlockNow = () => {
     setIsTimerRunning(false);
-    const target = countdownTarget ?? (unlocked[0] ? (unlocked[1] ? 2 : 1) : 0);
+    const target = countdownTarget ?? (!unlocked[0] ? 0 : (!unlocked[1] && measurements.length >= 2) ? 1 : (!unlocked[2] && measurements.length === 3) ? 2 : 0);
     setUnlocked((prev) => {
       const updated = [...prev];
       updated[target] = true;
@@ -244,10 +217,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
       isRecorded: false
     };
     onChangeMeasurement(measIndex, cleared);
-
-    // Se limpar M1 ou M2, reseta a trava do auto-trigger para poder disparar novamente se preenchido
-    if (measIndex === 0) hasTriggeredM2Ref.current = false;
-    if (measIndex === 1) hasTriggeredM3Ref.current = false;
+    setValidationMsg(null);
   };
 
   // Manipulação de Valores Digitados
@@ -282,6 +252,49 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     onChangeMeasurement(measIndex, processed);
   };
 
+  // Botão "VALIDAR DADOS": valida as grandezas da célula atual e, se houver próximo teste, dispara o cronômetro para liberar a próxima célula!
+  const handleValidateAndProceed = (measIndex: number) => {
+    const meas = measurements[measIndex];
+    if (!meas) return;
+
+    const missing = getMissingMeasurementFields(meas, selectedTransformer);
+    if (missing.length > 0) {
+      setValidationMsg({
+        index: measIndex,
+        text: `Por favor, preencha todos os campos obrigatórios antes de validar: ${missing.join(', ')}.`,
+        isError: true
+      });
+      return;
+    }
+
+    setValidationMsg({
+      index: measIndex,
+      text: `Dados da ${measIndex + 1}ª Medição validados com sucesso!`,
+      isError: false
+    });
+
+    const updated: SingleMeasurement = {
+      ...meas,
+      isRecorded: true,
+      timestamp: new Date().toLocaleTimeString('pt-BR')
+    };
+    onChangeMeasurement(measIndex, updated);
+
+    // Se houver próxima medição na campanha que ainda não está desbloqueada:
+    const nextIndex = measIndex + 1;
+    if (nextIndex < measurements.length && !unlocked[nextIndex]) {
+      setCountdownTarget(nextIndex);
+      const cycleSecs = getCycleDurationSeconds(cycleMode);
+      setTimerSeconds(cycleSecs);
+      setIsTimerRunning(true);
+    } else if (nextIndex >= measurements.length) {
+      // Concluiu todos os testes da campanha
+      setCountdownTarget(null);
+      setIsTimerRunning(false);
+      onAllCompleted?.();
+    }
+  };
+
   // Rótulo do ciclo por extenso
   const cycleLabel = cycleMode === '1s'
     ? '1 SEGUNDO'
@@ -311,17 +324,17 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões e correntes — a 1ª medição ocorre pós-fechamento do transformador. 1 medição é validada como medição instantânea.
+              Coleta de tensões e correntes — a 1ª medição ocorre pós-fechamento do transformador. As células permanecem ocultas e surgem apenas ao término de cada cronômetro.
             </p>
           </div>
         </div>
       </div>
 
       {/* PAINEL DE PRÉ-CONFIGURAÇÃO DO TESTE & CRONÔMETRO CENTRAL */}
-      <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-3 border-b border-slate-200 dark:border-slate-700/80">
-          {/* 1. SELETOR DE QUANTIDADE DE TESTES */}
-          <div className="space-y-1.5">
+      <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pb-2.5 border-b border-slate-200 dark:border-slate-700/80">
+          {/* 1. SELETOR DE QUANTIDADE DE TESTES - BOTÕES COMPACTOS */}
+          <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider block">
               1. QUANTIDADE DE TESTES (1 A 3 MEDIÇÕES)
             </label>
@@ -329,46 +342,43 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               <button
                 type="button"
                 onClick={() => handleSetCount(1)}
-                className={`py-1.5 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
                   measurements.length === 1
-                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 <span>1 TESTE</span>
-                <span className="text-[9px] font-normal opacity-80">(Instantâneo)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSetCount(2)}
-                className={`py-1.5 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
                   measurements.length === 2
-                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 <span>2 TESTES</span>
-                <span className="text-[9px] font-normal opacity-80">(Duplo)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSetCount(3)}
-                className={`py-1.5 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
                   measurements.length === 3
-                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 <span>3 TESTES</span>
-                <span className="text-[9px] font-normal opacity-80">(Campanha)</span>
               </button>
             </div>
           </div>
 
-          {/* 2. SELETOR DE INTERVALO DE CICLO */}
-          <div className="space-y-1.5">
+          {/* 2. SELETOR DE INTERVALO DE CICLO - BOTÕES COMPACTOS & RÓTULO PROVISÓRIO */}
+          <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider block">
               2. INTERVALO DE CICLO TEMPORIZADO
             </label>
@@ -376,51 +386,49 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               <button
                 type="button"
                 onClick={() => onCycleModeChange('1s')}
-                className={`py-1.5 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                title="Opção temporária para testes rápidos de bancada. Esta função será removida do aplicativo futuramente."
+                className={`h-7 px-1.5 rounded text-[11px] font-bold font-mono transition cursor-pointer flex items-center justify-center truncate ${
                   cycleMode === '1s'
-                    ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/40'
+                    ? 'bg-amber-600 text-white shadow-xs ring-1 ring-amber-500'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                <span>1 SEGUNDO</span>
-                <span className="text-[9px] font-normal opacity-80">(Teste Rápido)</span>
+                <span className="truncate">1s (TESTE PROVISÓRIO)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => onCycleModeChange('5m')}
-                className={`py-1.5 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                className={`h-7 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
                   cycleMode === '5m'
-                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/40'
+                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 <span>5 MINUTOS</span>
-                <span className="text-[9px] font-normal opacity-80">(Intermediário)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => onCycleModeChange('10m')}
-                className={`py-1.5 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex flex-col items-center justify-center ${
+                className={`h-7 px-1.5 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
                   cycleMode === '10m'
-                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/40'
+                    ? 'bg-emerald-600 text-white shadow-xs ring-1 ring-emerald-500'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                <span>10 MINUTOS</span>
-                <span className="text-[9px] font-normal opacity-80">(Recomendado)</span>
+                <span>10 MIN (RECOMENDADO)</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* 3. CRONÔMETRO CENTRAL E CONTROLES INTEGRADOS */}
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-xs">
           <div className="flex items-center gap-3">
-            {/* Display Digital do Contador */}
-            <div className="bg-slate-950 text-amber-400 font-mono font-extrabold text-2xl py-1.5 px-3.5 rounded shadow-inner border border-slate-800 tracking-widest flex items-center gap-2">
-              <Timer className={`w-5 h-5 ${isTimerRunning ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
+            {/* Display Digital do Contador: Fundo Claro no tema Light, Fundo Escuro no tema Dark */}
+            <div className="bg-amber-50 dark:bg-slate-950 text-amber-800 dark:text-amber-400 font-mono font-extrabold text-2xl py-1 px-3.5 rounded shadow-inner border border-amber-300 dark:border-slate-800 tracking-widest flex items-center gap-2">
+              <Timer className={`w-5 h-5 ${isTimerRunning ? 'text-amber-600 dark:text-amber-400 animate-pulse' : 'text-amber-700/60 dark:text-slate-500'}`} />
               <span>{formatTimer(timerSeconds)}</span>
             </div>
 
@@ -428,23 +436,23 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <div className="space-y-0.5">
               <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono">
                 {isTimerRunning
-                  ? `CONTADOR EM ANDAMENTO — LIBERANDO ${(countdownTarget ?? 0) + 1}ª MEDIÇÃO`
+                  ? `CRONÔMETRO EM ANDAMENTO — LIBERANDO ${(countdownTarget ?? 0) + 1}ª CÉLULA`
                   : countdownTarget !== null
-                  ? `CONTADOR PRONTO — PARA ${(countdownTarget ?? 0) + 1}ª MEDIÇÃO`
-                  : 'STATUS DA CAMPANHA TEMPORIZADA'}
+                  ? `CRONÔMETRO PRONTO — PARA ${(countdownTarget ?? 0) + 1}ª CÉLULA`
+                  : 'CAMPANHA DE MEDIÇÕES TEMPORIZADAS'}
               </div>
               <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 {isTimerRunning ? (
-                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block"></span>
-                    Aguardando contagem regressiva para liberar a célula...
+                    Contagem regressiva em andamento... A célula surgirá ao zerar.
                   </span>
                 ) : countdownTarget !== null ? (
-                  <span>Clique em "INICIAR CONTADOR" para disparar a contagem e liberar a célula.</span>
+                  <span>Clique em "INICIAR CONTADOR" para disparar o tempo e liberar a célula.</span>
                 ) : (
                   <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Célula liberada para inserção de dados coletados.
+                    Célula liberada para inserção e validação de dados.
                   </span>
                 )}
               </div>
@@ -457,7 +465,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               <button
                 type="button"
                 onClick={handleStartTimer}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5" />
                 <span>INICIAR CONTADOR</span>
@@ -466,7 +474,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               <button
                 type="button"
                 onClick={handleStopTimer}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
               >
                 <Pause className="w-3.5 h-3.5" />
                 <span>PARAR CONTADOR</span>
@@ -476,8 +484,8 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={handleBypassUnlockNow}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
-              title="Liberar imediatamente sem aguardar o contador"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
+              title="Liberar a célula imediatamente sem aguardar o cronômetro zerar"
             >
               <Unlock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
               <span>LIBERAR AGORA</span>
@@ -486,18 +494,18 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
         </div>
       </div>
 
-      {/* SE NENHUMA CÉLULA ESTIVER LIBERADA AINDA (OCULTA ATÉ TÉRMINO DO CONTADOR) */}
+      {/* SE NENHUMA CÉLULA ESTIVER LIBERADA AINDA (TODAS OCULTAS ATÉ TÉRMINO DO 1º CONTADOR) */}
       {!unlocked[0] && (
-        <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center space-y-3">
-          <div className="p-3 bg-blue-50 dark:bg-blue-950/60 rounded-full border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400">
-            <Clock className="w-8 h-8 animate-pulse" />
+        <div className="p-6 sm:p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center space-y-3">
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/60 rounded-full border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400">
+            <Clock className="w-7 h-7 animate-pulse" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">
-              CÉLULAS DE MEDIÇÃO OCULTAS (AGUARDANDO TÉRMINO DO CONTADOR)
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">
+              CAMPANHA DE MEDIÇÕES TEMPORIZADAS (CÉLULAS OCULTAS)
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md font-mono">
-              A 1ª Célula de Medição está oculta e será exibida automaticamente após a conclusão do contador regressivo ({cycleLabel}), pós-fechamento do transformador.
+              Todas as células estão ocultas. A 1ª Célula de Medição surgirá automaticamente assim que o primeiro cronômetro ({cycleLabel}) terminar, pós-fechamento do transformador.
             </p>
           </div>
           <div className="flex items-center gap-2 pt-1 flex-wrap justify-center">
@@ -508,21 +516,22 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                 className="flex items-center gap-1.5 px-4 py-2 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
               >
                 <Play className="w-4 h-4" />
-                <span>INICIAR CONTADOR AGORA</span>
+                <span>INICIAR CONTADOR (1º CICLO)</span>
               </button>
             ) : (
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1.5">
+              <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/50 px-3 py-1.5 rounded border border-amber-200 dark:border-amber-800">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping inline-block"></span>
-                Contagem em andamento... A célula surgirá ao zerar o tempo.
+                Contagem em andamento... A 1ª célula surgirá ao zerar o tempo.
               </span>
             )}
             <button
               type="button"
               onClick={handleBypassUnlockNow}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
+              title="Liberar imediatamente a 1ª célula sem aguardar o tempo"
             >
               <Unlock className="w-3.5 h-3.5 text-blue-600" />
-              <span>LIBERAR AGORA SEM AGUARDAR</span>
+              <span>LIBERAR 1ª CÉLULA AGORA</span>
             </button>
           </div>
         </div>
@@ -548,9 +557,9 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                 key={meas.id}
                 className="rounded border p-3.5 relative flex flex-col justify-between shadow-xs bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700"
               >
-                <div>
+                <div className="space-y-2.5">
                   {/* Header do Card */}
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono bg-blue-600 text-white">
                         {measNum}
@@ -569,17 +578,23 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                         className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 transition cursor-pointer"
                       >
                         <Trash2 className="w-3 h-3" />
-                        <span>APAGAR DADOS DA CÉLULA</span>
+                        <span>APAGAR DADOS</span>
                       </button>
 
-                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                        <Unlock className="w-3 h-3" /> LIBERADA
-                      </span>
+                      {meas.isRecorded ? (
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> DADOS VALIDADOS
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> AGUARDANDO VALIDAÇÃO
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   {/* Inputs Tensões Fase-Neutro */}
-                  <div className="mb-2.5">
+                  <div>
                     <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
                       TENSÕES FASE-NEUTRO [V]
                     </label>
@@ -620,7 +635,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   </div>
 
                   {/* Inputs Tensões Fase-Fase */}
-                  <div className="mb-2.5">
+                  <div>
                     <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
                       TENSÕES FASE-FASE [V]
                     </label>
@@ -663,7 +678,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   </div>
 
                   {/* Inputs Correntes */}
-                  <div className="mb-2.5">
+                  <div>
                     <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
                       CORRENTES DE LINHA [A]
                     </label>
@@ -714,8 +729,8 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   </div>
                 </div>
 
-                {/* Rodapé do Card com Métricas Instantâneas daquela Medição Sem Abreviações */}
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-400">
+                {/* Rodapé do Card com Métricas Instantâneas Sem Abreviações */}
+                <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-400">
                   <div>
                     <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Tensão Média Fase-Fase</span>
                     <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgVoltagePhasePhase} V</strong>
@@ -735,6 +750,45 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                     <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.totalKva} kVA</strong>
                   </div>
                 </div>
+
+                {/* BOTÃO DE VALIDAÇÃO DOS DADOS DA CÉLULA */}
+                <div className="pt-2.5 mt-2 border-t border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleValidateAndProceed(idx)}
+                    className={`w-full py-2 px-3 rounded text-xs font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer ${
+                      meas.isRecorded
+                        ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                    <span>
+                      {meas.isRecorded
+                        ? 'DADOS VALIDADOS (CLIQUE PARA REVALIDAR)'
+                        : idx + 1 < measurements.length
+                        ? 'VALIDAR DADOS'
+                        : 'VALIDAR DADOS E CONCLUIR'}
+                    </span>
+                  </button>
+
+                  {validationMsg && validationMsg.index === idx && (
+                    <div
+                      className={`p-2 rounded text-[11px] font-mono flex items-start gap-1.5 ${
+                        validationMsg.isError
+                          ? 'bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                          : 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      {validationMsg.isError ? (
+                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      )}
+                      <span>{validationMsg.text}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -743,12 +797,15 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
 
       {/* Aviso quando há medições pendentes para a campanha */}
       {unlocked[0] && measurements.length > visibleCount && (
-        <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded border border-blue-200 dark:border-blue-800 text-xs font-mono text-blue-800 dark:text-blue-300 flex items-center justify-between gap-2 flex-wrap">
-          <span>
-            {measurements.length - visibleCount === 1
-              ? `A ${visibleCount + 1}ª Medição está oculta e surgirá automaticamente assim que o próximo ciclo do contador terminar.`
-              : `Restam ${measurements.length - visibleCount} medições ocultas que surgirão sequencialmente conforme os ciclos temporizados terminarem.`}
-          </span>
+        <div className="p-3 bg-blue-50/80 dark:bg-blue-950/50 rounded border border-blue-200 dark:border-blue-800 text-xs font-mono text-blue-800 dark:text-blue-300 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span>
+              {isTimerRunning
+                ? `Aguarde o término do contador (${formatTimer(timerSeconds)}) para liberação da ${visibleCount + 1}ª Medição.`
+                : `A ${visibleCount + 1}ª Medição está oculta. Ela surgirá automaticamente após o término do contador regressivo iniciado ao validar os dados da medição anterior.`}
+            </span>
+          </div>
           <button
             type="button"
             onClick={handleBypassUnlockNow}
@@ -761,3 +818,4 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     </div>
   );
 };
+

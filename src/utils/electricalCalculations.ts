@@ -412,11 +412,11 @@ function validateMeasurementData(
       const ffLabels = ['Vab', 'Vbc', 'Vca'];
       const fnLabels = ['Van', 'Vbn', 'Vcn'];
       const ffOut = ff.map((value, index) => ({ label: ffLabels[index], value, result: classifyProdistVoltage(value, transformer.secondaryVoltageV, 'FF') }))
-        .filter((item) => item.value > 0 && item.result?.status !== 'ADEQUADA');
-      const fnOut = fn.map((value, index) => ({ label: fnLabels[index], value, result: classifyProdistVoltage(value, transformer.secondaryNeutralV, 'FN') }))
-        .filter((item) => item.value > 0 && item.result?.status !== 'ADEQUADA');
+        .filter((item) => item.value > 0 && item.result && item.result.status !== 'ADEQUADA');
+      const fnOut = fn.map((value, index) => ({ label: fnLabels[index], value, result: (transformer.secondaryNeutralV || 0) > 0 ? classifyProdistVoltage(value, transformer.secondaryNeutralV, 'FN') : null }))
+        .filter((item) => item.value > 0 && item.result && item.result.status !== 'ADEQUADA');
       if (ffOut.length || fnOut.length) {
-        const details = [...ffOut, ...fnOut].map((item) => `${item.label}=${item.value} V (${item.result?.status})`).join('; ');
+        const details = [...ffOut, ...fnOut].map((item) => `${item.label}=${item.value} V (${item.result?.status || 'PRECARIA'})`).join('; ');
         const critical = [...ffOut, ...fnOut].some((item) => item.result?.status === 'CRITICA');
         issues.push({
           measurementId: m.id,
@@ -517,27 +517,44 @@ function validateMeasurementData(
   for (let index = 1; index < times.length; index += 1) {
     let elapsed = times[index].seconds - times[index - 1].seconds;
     if (elapsed < -43200) elapsed += 86400; // virada legítima de meia-noite
-    if (elapsed < 0) {
-      issues.push({ code: 'CRONOLOGIA', severity: 'CRITICAL', title: 'Ordem temporal invertida', message: `M${times[index].id} (${measurements.find((m) => m.id === times[index].id)?.timestamp}) é anterior à medição anterior.` });
-    } else if (elapsed === 0) {
-      issues.push({ code: 'CRONOLOGIA_COINCIDENTE', severity: 'WARNING', title: 'Horários coincidentes', message: `M${times[index - 1].id} e M${times[index].id} possuem o mesmo horário gravado. Recomenda-se registrar os horários distintos de cada medição.` });
-    } else if (elapsed < expectedSeconds - tolerance) {
-      issues.push({ code: 'INTERVALO', severity: 'WARNING', title: 'Intervalo menor que o ciclo selecionado', message: `Intervalo M${times[index - 1].id}→M${times[index].id}: ${elapsed} s; mínimo esperado ${expectedSeconds} s para o ciclo ${cycleMode}.` });
+    if (cycleMode === '1s' || cycleMode === '5s') {
+      // Em ciclos provisórios rápidos de teste, aceita pequeno intervalo consecutivo
+      if (elapsed < 0 && Math.abs(elapsed) > 2) {
+        issues.push({ code: 'CRONOLOGIA', severity: 'CRITICAL', title: 'Ordem temporal invertida', message: `M${times[index].id} (${measurements.find((m) => m.id === times[index].id)?.timestamp}) é anterior à medição anterior.` });
+      }
+    } else {
+      if (elapsed < 0) {
+        issues.push({ code: 'CRONOLOGIA', severity: 'CRITICAL', title: 'Ordem temporal invertida', message: `M${times[index].id} (${measurements.find((m) => m.id === times[index].id)?.timestamp}) é anterior à medição anterior.` });
+      } else if (elapsed === 0) {
+        issues.push({ code: 'CRONOLOGIA_COINCIDENTE', severity: 'WARNING', title: 'Horários coincidentes', message: `M${times[index - 1].id} e M${times[index].id} possuem o mesmo horário gravado. Recomenda-se registrar os horários distintos de cada medição.` });
+      } else if (elapsed < expectedSeconds - tolerance) {
+        issues.push({ code: 'INTERVALO', severity: 'WARNING', title: 'Intervalo menor que o ciclo selecionado', message: `Intervalo M${times[index - 1].id}→M${times[index].id}: ${elapsed} s; mínimo esperado ${expectedSeconds} s para o ciclo ${cycleMode}.` });
+      }
     }
   }
 
-  const hasCritical = issues.some((issue) => issue.severity === 'CRITICAL');
-  const hasFatalMeasurementError = issues.some((issue) =>
+  // Deduplica issues para garantir que nenhum alerta idêntico seja repetido
+  const uniqueIssues = issues.filter((issue, index, self) =>
+    index === self.findIndex((other) =>
+      other.code === issue.code &&
+      other.measurementId === issue.measurementId &&
+      other.title === issue.title &&
+      other.message === issue.message
+    )
+  );
+
+  const hasCritical = uniqueIssues.some((issue) => issue.severity === 'CRITICAL');
+  const hasFatalMeasurementError = uniqueIssues.some((issue) =>
     issue.severity === 'CRITICAL' && issue.code !== 'DESEQUILIBRIO_CORRENTE'
   );
   const hasTrafo = hasValidTransformerIdentity(transformer);
   const canIssueTap = !hasFatalMeasurementError && valid.length >= 1 && hasTrafo;
   const canIssueReport = valid.length >= 1 && hasTrafo;
   return {
-    status: hasCritical ? 'INCONSISTENTE' : issues.length > 0 ? 'ALERTA' : 'VALIDO',
+    status: hasCritical ? 'INCONSISTENTE' : uniqueIssues.length > 0 ? 'ALERTA' : 'VALIDO',
     isInstantaneous: valid.length === 1,
     validMeasurementsCount: valid.length,
-    issues,
+    issues: uniqueIssues,
     canIssueTapRecommendation: canIssueTap,
     canIssueReport: canIssueReport
   };
@@ -671,20 +688,35 @@ export function performFullDiagnosticAnalysis(
   const maxLoadingPercent = transformer.powerKva > 0 ? (maxKvaMeasured / transformer.powerKva) * 100 : 0;
   const avgLoadingPercent = transformer.powerKva > 0 ? (avgKvaMeasured / transformer.powerKva) * 100 : 0;
 
-  // Carregamento de pico de fase (enrolamento mais solicitado):
-  const maxPhaseLoadingPercent = Math.max(
-    ...validMeas.map((m) => m.maxPhaseLoadingPercent || 0),
-    maxLoadingPercent
-  );
-
-  // Identificação da fase crítica:
-  const criticalPhase: 'A' | 'B' | 'C' | 'EQUILIBRADO' = validMeas.length > 0 && validMeas[0].criticalPhase
-    ? validMeas[0].criticalPhase
-    : 'EQUILIBRADO';
-
   const loadingPercentA = nominalCurrentSecondaryA > 0 ? (avgIa / nominalCurrentSecondaryA) * 100 : 0;
   const loadingPercentB = nominalCurrentSecondaryA > 0 ? (avgIb / nominalCurrentSecondaryA) * 100 : 0;
   const loadingPercentC = isTri && nominalCurrentSecondaryA > 0 ? (avgIc / nominalCurrentSecondaryA) * 100 : 0;
+
+  // Carregamento de pico de fase (enrolamento mais solicitado):
+  const maxPhaseLoadingPercent = Number(Math.max(
+    loadingPercentA,
+    loadingPercentB,
+    loadingPercentC,
+    maxLoadingPercent
+  ).toFixed(1));
+
+  // Identificação da fase crítica consolidada (enrolamento com maior demanda de corrente):
+  let criticalPhase: 'A' | 'B' | 'C' | 'EQUILIBRADO' = 'EQUILIBRADO';
+  if (isTri) {
+    const maxAvgCurrent = Math.max(avgIa, avgIb, avgIc);
+    const unbalance = overallAvgCurrentA > 0 ? ((maxAvgCurrent - overallAvgCurrentA) / overallAvgCurrentA) * 100 : 0;
+    if (unbalance >= 3) {
+      if (avgIc === maxAvgCurrent && (avgIc > avgIa || avgIc > avgIb)) criticalPhase = 'C';
+      else if (avgIb === maxAvgCurrent && (avgIb > avgIa || avgIb > avgIc)) criticalPhase = 'B';
+      else if (avgIa === maxAvgCurrent && (avgIa > avgIb || avgIa > avgIc)) criticalPhase = 'A';
+    } else {
+      criticalPhase = 'EQUILIBRADO';
+    }
+  } else {
+    if (avgIa > avgIb * 1.03) criticalPhase = 'A';
+    else if (avgIb > avgIa * 1.03) criticalPhase = 'B';
+    else criticalPhase = 'EQUILIBRADO';
+  }
 
   // A condição de carregamento é ditada pela fase mais carregada (NBR 5356-7 / NDU 006):
   const peakEvaluationLoading = Math.max(maxPhaseLoadingPercent, maxLoadingPercent);

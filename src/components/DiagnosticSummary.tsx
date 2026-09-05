@@ -121,7 +121,11 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             <div className="font-bold uppercase tracking-wider mb-0.5 text-red-700 dark:text-red-400">
               ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7)
             </div>
-            A Fase {analysis.criticalPhase || 'C'} opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase {analysis.criticalPhase || 'C'} para as demais fases.
+            {analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? (
+              <>A Fase <strong>{analysis.criticalPhase}</strong> opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase {analysis.criticalPhase} para as demais fases.</>
+            ) : (
+              <>O transformador opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas elevadas causam aquecimento excessivo e envelhecimento acelerado do transformador. É recomendado o remanejamento de carga ou aumento de capacidade.</>
+            )}
           </div>
         </div>
       )}
@@ -220,7 +224,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         }`}>
           <div>
             <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
-              CARREGAMENTO {analysis.criticalPhase ? `(PICO NA FASE ${analysis.criticalPhase})` : 'MÁXIMO (% DA CORRENTE NOMINAL)'}
+              CARREGAMENTO {analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `(PICO NA FASE ${analysis.criticalPhase})` : '(MÁXIMO TRIFÁSICO)'}
             </div>
             <div className={`text-lg font-extrabold font-mono ${
               analysis.loadingCondition.includes('SOBRECARGA')
@@ -236,10 +240,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </div>
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
-            {analysis.criticalPhase ? (
-              <>Fases: <strong>A:{analysis.loadingPercentA}%</strong> | <strong>B:{analysis.loadingPercentB}%</strong> | <strong>C:{analysis.loadingPercentC}%</strong> • </>
-            ) : null}
-            Condição: <span className={`font-bold ${
+            Fases: <strong>A:{analysis.loadingPercentA}%</strong> | <strong>B:{analysis.loadingPercentB}%</strong> | <strong>C:{analysis.loadingPercentC}%</strong> • Condição: <span className={`font-bold ${
               analysis.loadingCondition.includes('SOBRECARGA') ? 'text-red-700 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'
             }`}>{analysis.loadingCondition.replace('_', ' ')}</span>
           </p>
@@ -267,7 +268,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
                 : 'text-emerald-600 dark:text-emerald-400'
             }`}>
               {(analysis.maxPhaseLoadingPercent || 0) > 100
-                ? `SOBRECARGA NA FASE ${analysis.criticalPhase || 'C'}`
+                ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA TRIFÁSICA')
                 : analysis.loadingCondition.replace('_', ' ')}
             </div>
             <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">

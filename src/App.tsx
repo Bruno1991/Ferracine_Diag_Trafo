@@ -194,7 +194,7 @@ export default function App() {
         );
         updated.push(newMeas);
       }
-      return updated;
+      return updated.map((m, idx) => ({ ...m, id: idx + 1 }));
     });
   };
 
