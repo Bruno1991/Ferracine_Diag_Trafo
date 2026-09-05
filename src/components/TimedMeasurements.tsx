@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle, Trash2 } from 'lucide-react';
+import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle, Trash2, Plus, RotateCcw } from 'lucide-react';
 import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
 import { getMissingMeasurementFields, processSingleMeasurement } from '../utils/electricalCalculations';
 
 interface TimedMeasurementsProps {
   measurements: SingleMeasurement[];
   onChangeMeasurement: (index: number, updated: SingleMeasurement) => void;
+  onAddMeasurement?: () => void;
+  onRemoveMeasurement?: (index: number) => void;
   selectedTransformer: TransformerSpec;
   cycleMode: MeasurementCycleMode;
   onCycleModeChange: (mode: MeasurementCycleMode) => void;
@@ -15,6 +17,8 @@ interface TimedMeasurementsProps {
 export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   measurements,
   onChangeMeasurement,
+  onAddMeasurement,
+  onRemoveMeasurement,
   selectedTransformer,
   cycleMode,
   onCycleModeChange,
@@ -41,11 +45,13 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     } else if (timer1Seconds === 0 && isTimer1Running) {
       setIsTimer1Running(false);
       // Unlock Measurement 2
-      const updatedMeas2 = {
-        ...measurements[1],
-        isLocked: false
-      };
-      onChangeMeasurement(1, updatedMeas2);
+      if (measurements[1]) {
+        const updatedMeas2 = {
+          ...measurements[1],
+          isLocked: false
+        };
+        onChangeMeasurement(1, updatedMeas2);
+      }
     }
     return () => clearInterval(interval);
   }, [isTimer1Running, timer1Seconds]);
@@ -60,11 +66,13 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     } else if (timer2Seconds === 0 && isTimer2Running) {
       setIsTimer2Running(false);
       // Unlock Measurement 3
-      const updatedMeas3 = {
-        ...measurements[2],
-        isLocked: false
-      };
-      onChangeMeasurement(2, updatedMeas3);
+      if (measurements[2]) {
+        const updatedMeas3 = {
+          ...measurements[2],
+          isLocked: false
+        };
+        onChangeMeasurement(2, updatedMeas3);
+      }
     }
     return () => clearInterval(interval);
   }, [isTimer2Running, timer2Seconds]);
@@ -72,18 +80,18 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   // If the page is reloaded during a saved field campaign, restart the full
   // safety interval instead of leaving the next measurement permanently locked.
   useEffect(() => {
-    if (measurements[0].isRecorded && measurements[1].isLocked && !isTimer1Running) {
+    if (measurements[0]?.isRecorded && measurements[1]?.isLocked && !isTimer1Running) {
       setTimer1Seconds(intervalSeconds);
       setIsTimer1Running(true);
     }
-  }, [measurements[0].isRecorded, measurements[1].isLocked, intervalSeconds]);
+  }, [measurements[0]?.isRecorded, measurements[1]?.isLocked, intervalSeconds]);
 
   useEffect(() => {
-    if (measurements[1].isRecorded && measurements[2].isLocked && !isTimer2Running) {
+    if (measurements[1]?.isRecorded && measurements[2]?.isLocked && !isTimer2Running) {
       setTimer2Seconds(intervalSeconds);
       setIsTimer2Running(true);
     }
-  }, [measurements[1].isRecorded, measurements[2].isLocked, intervalSeconds]);
+  }, [measurements[1]?.isRecorded, measurements[2]?.isLocked, intervalSeconds]);
 
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -206,13 +214,17 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   const handleBypassTimer1 = () => {
     setIsTimer1Running(false);
     setTimer1Seconds(0);
-    onChangeMeasurement(1, { ...measurements[1], isLocked: false });
+    if (measurements[1]) {
+      onChangeMeasurement(1, { ...measurements[1], isLocked: false });
+    }
   };
 
   const handleBypassTimer2 = () => {
     setIsTimer2Running(false);
     setTimer2Seconds(0);
-    onChangeMeasurement(2, { ...measurements[2], isLocked: false });
+    if (measurements[2]) {
+      onChangeMeasurement(2, { ...measurements[2], isLocked: false });
+    }
   };
 
   const isTri = selectedTransformer.phaseType === 'TRIFASICO';
@@ -225,21 +237,37 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <Clock className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-              3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEGUNDOS' : '10 MINUTOS'})
-            </h2>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEGUNDOS' : '10 MINUTOS'})
+              </h2>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                ({measurements.length} medição{measurements.length > 1 ? 'ões' : ''})
+              </span>
+            </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões e correntes — você pode emitir o laudo técnico com quantas medições quiser (1, 2 ou 3)
+              Coleta de tensões e correntes — adicione de 1 a 3 medições conforme a necessidade do laudo
             </p>
             {cycleMode === '5s' && (
               <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
-                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; o ciclo de 10 min é para operação de campo.
+                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; o ciclo de 10 min é para operação de fato.
               </p>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {measurements.length < 3 && onAddMeasurement && (
+            <button
+              type="button"
+              onClick={onAddMeasurement}
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>ADICIONAR MEDIÇÃO ({measurements.length + 1}ª)</span>
+            </button>
+          )}
+
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded border border-slate-300 dark:border-slate-700">
             <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 px-1 font-mono uppercase">CICLO:</span>
             <button
@@ -277,14 +305,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
           <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200">
             <Timer className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span className="text-[11px] font-mono font-bold">
-              TEMPO RECOMENDADO: {cycleMode === '5s' ? '10 SEG' : '20 MIN'}
+              TEMPO RECOMENDADO: {cycleMode === '5s' ? (measurements.length === 1 ? '5 SEG' : measurements.length === 2 ? '10 SEG' : '15 SEG') : (measurements.length === 1 ? '10 MIN' : measurements.length === 2 ? '20 MIN' : '30 MIN')}
             </span>
           </div>
         </div>
       </div>
 
-      {/* 3 Columns Side-by-Side */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* Dynamic Columns Side-by-Side */}
+      <div className={`grid grid-cols-1 ${measurements.length === 2 ? 'md:grid-cols-2' : measurements.length >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'} gap-3`}>
         {/* COLUNA 1: MEDIÇÃO 1 */}
         <div className="bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-300 dark:border-slate-700 p-3 relative flex flex-col justify-between shadow-xs">
           <div>
@@ -461,12 +489,13 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             className="w-full py-1.5 px-3 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer mt-1"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>REGISTRAR 1ª MEDIÇÃO (+{cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)</span>
+            <span>REGISTRAR 1ª MEDIÇÃO {measurements.length > 1 ? `(+${cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)` : ''}</span>
           </button>
         </div>
 
 
         {/* COLUNA 2: MEDIÇÃO 2 */}
+        {measurements.length >= 2 && measurements[1] && (
         <div className={`rounded border p-3 relative flex flex-col justify-between transition-all ${
           measurements[1].isLocked
             ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
@@ -490,10 +519,20 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   type="button"
                   onClick={() => handleClearMeasurement(1)}
                   title="Limpar campos da 2ª Medição"
-                  className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                  className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 transition cursor-pointer"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                 </button>
+                {onRemoveMeasurement && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMeasurement(1)}
+                    title="Remover 2ª Medição"
+                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 {measurements[1].isLocked ? (
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
                     <Lock className="w-3 h-3" /> BLOQUEADO
@@ -677,15 +716,17 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   className="w-full py-1.5 px-3 rounded text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer mt-1"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>REGISTRAR 2ª MEDIÇÃO (+{cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)</span>
+                  <span>REGISTRAR 2ª MEDIÇÃO {measurements.length > 2 ? `(+${cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)` : ''}</span>
                 </button>
               </>
             )}
           </div>
         </div>
+        )}
 
 
         {/* COLUNA 3: MEDIÇÃO 3 */}
+        {measurements.length >= 3 && measurements[2] && (
         <div className={`rounded border p-3 relative flex flex-col justify-between transition-all ${
           measurements[2].isLocked
             ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
@@ -709,10 +750,20 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   type="button"
                   onClick={() => handleClearMeasurement(2)}
                   title="Limpar campos da 3ª Medição"
-                  className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                  className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 transition cursor-pointer"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                 </button>
+                {onRemoveMeasurement && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMeasurement(2)}
+                    title="Remover 3ª Medição"
+                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 {measurements[2].isLocked ? (
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
                     <Lock className="w-3 h-3" /> BLOQUEADO
@@ -902,6 +953,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

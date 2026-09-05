@@ -239,60 +239,64 @@ export default function App() {
   const [selectedTap, setSelectedTap] = useState<string>('');
   const [cycleMode, setCycleMode] = useState<MeasurementCycleMode>('10m');
 
-  // 3 Measurements State (Zeroed / Ready for Technician Input)
+  const createInitialMeasurement = (): SingleMeasurement => ({
+    id: 1,
+    label: '1ª Medição (T = 0 min)',
+    timestamp: new Date().toLocaleTimeString('pt-BR'),
+    isLocked: false,
+    isRecorded: false,
+    van: 0, vbn: 0, vcn: 0,
+    vab: 0, vbc: 0, vca: 0,
+    ia: 0, ib: 0, ic: 0, in: 0,
+    powerFactor: 0.92,
+    avgVoltagePhaseNeutral: 0,
+    avgVoltagePhasePhase: 0,
+    avgCurrent: 0,
+    totalKva: 0,
+    loadingPercent: 0,
+    fdtpPercent: 0
+  });
+
+  // Measurements State: inicia com 1 medição e permite adicionar até 3
   const [measurements, setMeasurements] = useState<SingleMeasurement[]>([
-    {
-      id: 1,
-      label: '1ª Medição (T = 0 min)',
-      timestamp: new Date().toLocaleTimeString('pt-BR'),
-      isLocked: false,
-      isRecorded: false,
-      van: 0, vbn: 0, vcn: 0,
-      vab: 0, vbc: 0, vca: 0,
-      ia: 0, ib: 0, ic: 0, in: 0,
-      powerFactor: 0.92,
-      avgVoltagePhaseNeutral: 0,
-      avgVoltagePhasePhase: 0,
-      avgCurrent: 0,
-      totalKva: 0,
-      loadingPercent: 0,
-      fdtpPercent: 0
-    },
-    {
-      id: 2,
-      label: '2ª Medição (T = 10 min)',
-      timestamp: '',
-      isLocked: true,
-      isRecorded: false,
-      van: 0, vbn: 0, vcn: 0,
-      vab: 0, vbc: 0, vca: 0,
-      ia: 0, ib: 0, ic: 0, in: 0,
-      powerFactor: 0.92,
-      avgVoltagePhaseNeutral: 0,
-      avgVoltagePhasePhase: 0,
-      avgCurrent: 0,
-      totalKva: 0,
-      loadingPercent: 0,
-      fdtpPercent: 0
-    },
-    {
-      id: 3,
-      label: '3ª Medição (T = 20 min)',
-      timestamp: '',
-      isLocked: true,
-      isRecorded: false,
-      van: 0, vbn: 0, vcn: 0,
-      vab: 0, vbc: 0, vca: 0,
-      ia: 0, ib: 0, ic: 0, in: 0,
-      powerFactor: 0.92,
-      avgVoltagePhaseNeutral: 0,
-      avgVoltagePhasePhase: 0,
-      avgCurrent: 0,
-      totalKva: 0,
-      loadingPercent: 0,
-      fdtpPercent: 0
-    }
+    createInitialMeasurement()
   ]);
+
+  const handleAddMeasurement = () => {
+    if (measurements.length >= 3) return;
+    const nextId = measurements.length + 1;
+    const label = nextId === 2
+      ? `2ª Medição (T = ${cycleMode === '5s' ? '5 seg' : '10 min'})`
+      : `3ª Medição (T = ${cycleMode === '5s' ? '10 seg' : '20 min'})`;
+
+    const newMeas: SingleMeasurement = processSingleMeasurement(
+      {
+        id: nextId,
+        label,
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        isLocked: false,
+        isRecorded: false,
+        van: 0, vbn: 0, vcn: 0,
+        vab: 0, vbc: 0, vca: 0,
+        ia: 0, ib: 0, ic: 0, in: 0,
+        powerFactor: 0.92,
+        avgVoltagePhaseNeutral: 0,
+        avgVoltagePhasePhase: 0,
+        avgCurrent: 0,
+        totalKva: 0,
+        loadingPercent: 0,
+        fdtpPercent: 0
+      },
+      selectedTransformer
+    );
+
+    setMeasurements((prev) => [...prev, newMeas]);
+  };
+
+  const handleRemoveMeasurement = (index: number) => {
+    if (measurements.length <= 1) return;
+    setMeasurements((prev) => prev.filter((_, idx) => idx !== index));
+  };
 
   // Photos state (up to 5 photos)
   const [photos, setPhotos] = useState<string[]>([]);
@@ -432,35 +436,7 @@ export default function App() {
     setSelectedTap('');
     setCycleMode('10m');
 
-    setMeasurements([
-      processSingleMeasurement(
-        {
-          id: 1, label: '1ª Medição (T = 0 min)', timestamp: '', isLocked: false, isRecorded: false,
-          van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
-          powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
-          avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
-        },
-        cleanTransformer
-      ),
-      processSingleMeasurement(
-        {
-          id: 2, label: '2ª Medição (T = 10 min)', timestamp: '', isLocked: true, isRecorded: false,
-          van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
-          powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
-          avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
-        },
-        cleanTransformer
-      ),
-      processSingleMeasurement(
-        {
-          id: 3, label: '3ª Medição (T = 20 min)', timestamp: '', isLocked: true, isRecorded: false,
-          van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
-          powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
-          avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
-        },
-        cleanTransformer
-      )
-    ]);
+    setMeasurements([createInitialMeasurement()]);
   };
 
   return (
@@ -493,6 +469,8 @@ export default function App() {
                   setCycleMode={setCycleMode}
                   measurements={measurements}
                   handleMeasurementChange={handleMeasurementChange}
+                  onAddMeasurement={handleAddMeasurement}
+                  onRemoveMeasurement={handleRemoveMeasurement}
                   analysis={analysis}
                   handleExportPdf={handleExportPdf}
                   handleExportExcel={handleExportExcel}

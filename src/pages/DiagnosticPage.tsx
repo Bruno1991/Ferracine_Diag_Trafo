@@ -30,6 +30,8 @@ interface DiagnosticPageProps {
   setCycleMode: React.Dispatch<React.SetStateAction<MeasurementCycleMode>>;
   measurements: SingleMeasurement[];
   handleMeasurementChange: (index: number, updated: SingleMeasurement) => void;
+  onAddMeasurement?: () => void;
+  onRemoveMeasurement?: (index: number) => void;
   analysis: DiagnosticAnalysis;
   handleExportPdf: () => void;
   handleExportExcel: () => void;
@@ -93,6 +95,8 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
       <TimedMeasurements
         measurements={measurements}
         onChangeMeasurement={handleMeasurementChange}
+        onAddMeasurement={props.onAddMeasurement}
+        onRemoveMeasurement={props.onRemoveMeasurement}
         selectedTransformer={selectedTransformer}
         cycleMode={cycleMode}
         onCycleModeChange={setCycleMode}
