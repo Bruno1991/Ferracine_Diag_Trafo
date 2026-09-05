@@ -438,7 +438,7 @@ function validateMeasurementData(
   });
 
   const times = valid.map((m) => ({ id: m.id, seconds: timestampToSeconds(m.timestamp) })).filter((item): item is { id: number; seconds: number } => item.seconds !== null);
-  const expectedSeconds = cycleMode === '5s' ? 5 : cycleMode === '5m' ? 300 : 600;
+  const expectedSeconds = cycleMode === '5s' ? 5 : 600;
   const tolerance = cycleMode === '5s' ? 2 : expectedSeconds * 0.2;
   for (let index = 1; index < times.length; index += 1) {
     let elapsed = times[index].seconds - times[index - 1].seconds;
@@ -520,7 +520,7 @@ function buildTapRecommendation(
 export function performFullDiagnosticAnalysis(
   measurements: SingleMeasurement[],
   transformer: TransformerSpec,
-  cycleMode: MeasurementCycleMode = '5m'
+  cycleMode: MeasurementCycleMode = '10m'
 ): DiagnosticAnalysis {
   const validMeas = measurements.filter((m) => isMeasurementReady(m, transformer));
   const count = validMeas.length || 1;

@@ -13,7 +13,7 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
   onClose,
   onAddTransformer
 }) => {
-  const [category, setCategory] = useState<TransformerType>('NOVO');
+  const [category, setCategory] = useState<TransformerType>('USADO');
   const [phaseType, setPhaseType] = useState<PhaseType>('TRIFASICO');
   const [powerKva, setPowerKva] = useState<number>(45);
   const [primaryVoltageV, setPrimaryVoltageV] = useState<number>(13800);
@@ -36,12 +36,12 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
     const powerW = powerKva * 1000;
     const efficiencyPercent = Number((((powerW * 0.92) / (powerW * 0.92 + totalLossW)) * 100).toFixed(2));
     
-    const id = `CUSTOM-${category === 'NOVO' ? 'NOV' : 'REC'}-${phaseType === 'TRIFASICO' ? 'TRI' : 'MONO'}-${powerKva}-${Math.floor(100 + Math.random() * 900)}`;
+    const id = `CUSTOM-${category === 'RECONDICIONADO' ? 'REC' : 'USD'}-${phaseType === 'TRIFASICO' ? 'TRI' : 'MONO'}-${powerKva}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newTrafo: TransformerSpec = {
       id,
       category,
-      state: category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'NOVO',
+      state: category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'USADO',
       phaseType,
       powerKva,
       primaryVoltageV,
@@ -99,7 +99,7 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
                 onChange={(e) => setCategory(e.target.value as TransformerType)}
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-500 focus:outline-none cursor-pointer"
               >
-                <option value="NOVO">Novo</option>
+                <option value="USADO">Usado</option>
                 <option value="RECONDICIONADO">Recondicionado</option>
               </select>
             </div>

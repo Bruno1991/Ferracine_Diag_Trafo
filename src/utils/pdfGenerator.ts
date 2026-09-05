@@ -94,8 +94,8 @@ export async function generateTransformerDiagnosticPdf({
   const accentColor = [2, 132, 199]; // sky-600
   const fdLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
   const voltageRange = getOfflineProdistVoltageRanges().find((range) => range.connection === 'FF' && Math.abs(range.nominalV - transformer.secondaryVoltageV) < 0.01);
-  const cycleDescription = cycleMode === '5s' ? '5 segundos (MODO DE TESTE)' : cycleMode === '5m' ? '5 minutos' : '10 minutos';
-  const measurementOffset = (id: number) => cycleMode === '5s' ? `${(id - 1) * 5} s` : `${(id - 1) * (cycleMode === '5m' ? 5 : 10)} min`;
+  const cycleDescription = cycleMode === '5s' ? '5 segundos (Modo de Teste)' : '10 minutos (Operação de Fato)';
+  const measurementOffset = (id: number) => cycleMode === '5s' ? `${(id - 1) * 5} s` : `${(id - 1) * 10} min`;
 
   // Header Builder - Matches App Header
   const drawHeader = (title: string, pageNum: number) => {
@@ -640,173 +640,174 @@ export async function generateTransformerDiagnosticPdf({
     headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 }
   });
 
-  // Assinatura do Técnico
+  // Assinatura e Parecer Técnico
   // @ts-ignore
-  currentY = doc.lastAutoTable.finalY + 12;
+  currentY = doc.lastAutoTable.finalY + 8;
 
-  if (currentY < pageHeight - 32) {
-    doc.setDrawColor(148, 163, 184);
-    doc.line(margin + 30, currentY + 12, pageWidth - margin - 30, currentY + 12);
+  // 4. PARECER TÉCNICO / OBSERVAÇÕES DE CAMPO DO ELETRICISTA
+  if (initialData.technicalNotes?.trim()) {
+    const textLines = doc.splitTextToSize(initialData.technicalNotes.trim(), pageWidth - 2 * margin - 8);
+    const boxHeight = Math.max(20, textLines.length * 4.2 + 10);
+
+    if (currentY + boxHeight + 40 > pageHeight) {
+      doc.addPage();
+      currentY = 28;
+      drawHeader('PARECER TÉCNICO E OBSERVAÇÕES DE CAMPO', doc.getNumberOfPages());
+    }
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
-    doc.text(initialData.electrician1Name || 'Eletricista 1', pageWidth / 2, currentY + 16, { align: 'center' });
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.text('4. PARECER TÉCNICO / OBSERVAÇÕES DE CAMPO DO ELETRICISTA', margin, currentY);
+    currentY += 4;
 
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(margin, currentY, pageWidth - 2 * margin, boxHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    doc.text(textLines, margin + 4, currentY + 6);
+
+    currentY += boxHeight + 8;
+  }
+
+  // Assinaturas dos Responsáveis Técnicos
+  const sigSpace = 28;
+  if (currentY + sigSpace > pageHeight) {
+    doc.addPage();
+    currentY = 28;
+    drawHeader('ASSINATURAS DOS RESPONSÁVEIS TÉCNICOS', doc.getNumberOfPages());
+  }
+
+  const sigY = Math.max(currentY + 14, pageHeight - 34);
+  if (initialData.electrician2Name?.trim()) {
+    const colW = (pageWidth - 2 * margin - 15) / 2;
+    // Eletricista 1
+    doc.setDrawColor(148, 163, 184);
+    doc.line(margin + 5, sigY, margin + colW - 5, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(initialData.electrician1Name || 'Eletricista 1', margin + colW / 2, sigY + 4.5, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, margin + colW / 2, sigY + 8.5, { align: 'center' });
+
+    // Eletricista 2
+    const x2 = margin + colW + 15;
+    doc.line(x2 + 5, sigY, x2 + colW - 5, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(initialData.electrician2Name, x2 + colW / 2, sigY + 4.5, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Matrícula: ${initialData.electrician2Matricula || 'N/A'}`, x2 + colW / 2, sigY + 8.5, { align: 'center' });
+  } else {
+    // Eletricista 1 único
+    doc.setDrawColor(148, 163, 184);
+    doc.line(margin + 30, sigY, pageWidth - margin - 30, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text(initialData.electrician1Name || 'Eletricista 1', pageWidth / 2, sigY + 4.5, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, pageWidth / 2, currentY + 20, { align: 'center' });
+    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, pageWidth / 2, sigY + 8.5, { align: 'center' });
   }
 
   // ==========================================
-  // PAGE 5: REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR (SE HOUVER FOTOS)
+  // REGISTROS FOTOGRÁFICOS: 1 FOTO POR PÁGINA (SEM DISTORÇÃO) - ATÉ 15 FOTOS
   // ==========================================
   if (photos && photos.length > 0) {
-    doc.addPage();
-    drawHeader('PÁGINA 5: REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR E INSTALAÇÃO', 5);
+    const validPhotos = photos.slice(0, 15);
+    validPhotos.forEach((photo, idx) => {
+      doc.addPage();
+      const pageNum = doc.getNumberOfPages();
+      drawHeader(`ANEXO FOTOGRÁFICO: FOTO ${idx + 1} DE ${validPhotos.length}`, pageNum);
 
-    currentY = 28;
+      const titleY = 32;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.text(
+        `REGISTRO FOTOGRÁFICO ${idx + 1}/${validPhotos.length} — INSPEÇÃO TÉCNICA (TAG: ${initialData.transformerTag || 'S/TAG'})`,
+        margin,
+        titleY
+      );
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-    doc.text('9. REGISTROS FOTOGRÁFICOS DE CAMPO (INSPEÇÃO VISUAL DO TRANSFORMADOR)', margin, currentY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        `Equipamento: ${transformer.powerKva} kVA | Tensão: ${(transformer.primaryVoltageV / 1000).toLocaleString('pt-BR')} kV / ${transformer.secondaryVoltageV} V | Concessionária: ${initialData.concessionaria || 'Energisa'}`,
+        margin,
+        titleY + 4.5
+      );
 
-    currentY += 8;
+      // Dimensões úteis para renderização proporcional exata
+      const startImgY = titleY + 9;
+      const bottomLimit = pageHeight - 30;
+      const maxW = pageWidth - 2 * margin; // 180 mm
+      const maxH = bottomLimit - startImgY; // ~220 mm
 
-    const count = Math.min(photos.length, 5);
-
-    if (count === 1) {
-      const imgW = 140;
-      const imgH = 105;
-      const imgX = (pageWidth - imgW) / 2;
       try {
+        const imgProps = doc.getImageProperties(photo);
+        const imgWidthPx = imgProps.width || 1;
+        const imgHeightPx = imgProps.height || 1;
+        const aspect = imgWidthPx / imgHeightPx;
+
+        let renderW = maxW;
+        let renderH = renderW / aspect;
+
+        if (renderH > maxH) {
+          renderH = maxH;
+          renderW = renderH * aspect;
+        }
+
+        const renderX = margin + (maxW - renderW) / 2;
+        const renderY = startImgY + (maxH - renderH) / 2;
+
+        // Moldura em torno da imagem
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(203, 213, 225);
-        doc.rect(imgX - 3, currentY - 3, imgW + 6, imgH + 16, 'FD');
-        doc.addImage(photos[0], 'JPEG', imgX, currentY, imgW, imgH);
+        doc.rect(renderX - 1.5, renderY - 1.5, renderW + 3, renderH + 3, 'FD');
+
+        // Renderiza a imagem sem distorção
+        doc.addImage(photo, 'JPEG', renderX, renderY, renderW, renderH);
+
+        // Legenda técnica abaixo da foto
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setTextColor(30, 41, 59);
-        doc.text(`Registro Fotográfico 1 — Vista do Transformador TAG: ${initialData.transformerTag || 'N/A'}`, pageWidth / 2, currentY + imgH + 8, { align: 'center' });
+        doc.text(
+          `Foto ${idx + 1} de ${validPhotos.length}: Registro de Campo — TAG ${initialData.transformerTag || 'N/A'} — Data: ${initialData.dateTime || new Date().toLocaleDateString('pt-BR')}`,
+          pageWidth / 2,
+          renderY + renderH + 6,
+          { align: 'center' }
+        );
       } catch (e) {
-        console.warn('Erro ao inserir foto 1 no PDF:', e);
+        console.warn(`Erro ao inserir foto ${idx + 1} no PDF:`, e);
       }
-    } else if (count === 2) {
-      const imgW = 85;
-      const imgH = 65;
-      const positions = [
-        { x: margin, y: currentY },
-        { x: margin + imgW + 12, y: currentY }
-      ];
-      photos.slice(0, 2).forEach((photo, idx) => {
-        const pos = positions[idx];
-        try {
-          doc.setFillColor(248, 250, 252);
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(pos.x - 2, pos.y - 2, imgW + 4, imgH + 14, 'FD');
-          doc.addImage(photo, 'JPEG', pos.x, pos.y, imgW, imgH);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.setTextColor(30, 41, 59);
-          doc.text(`Foto ${idx + 1}: Registro Técnico de Campo`, pos.x + imgW / 2, pos.y + imgH + 7, { align: 'center' });
-        } catch (e) {
-          console.warn(`Erro ao inserir foto ${idx + 1} no PDF:`, e);
-        }
-      });
-    } else if (count === 3) {
-      const imgW = 82;
-      const imgH = 60;
-      const positions = [
-        { x: margin, y: currentY },
-        { x: margin + imgW + 10, y: currentY },
-        { x: (pageWidth - imgW) / 2, y: currentY + imgH + 18 }
-      ];
-      photos.slice(0, 3).forEach((photo, idx) => {
-        const pos = positions[idx];
-        try {
-          doc.setFillColor(248, 250, 252);
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(pos.x - 2, pos.y - 2, imgW + 4, imgH + 14, 'FD');
-          doc.addImage(photo, 'JPEG', pos.x, pos.y, imgW, imgH);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.setTextColor(30, 41, 59);
-          doc.text(`Foto ${idx + 1}: Registro de Inspeção Visual`, pos.x + imgW / 2, pos.y + imgH + 7, { align: 'center' });
-        } catch (e) {
-          console.warn(`Erro ao inserir foto ${idx + 1} no PDF:`, e);
-        }
-      });
-    } else if (count === 4) {
-      const imgW = 82;
-      const imgH = 60;
-      const positions = [
-        { x: margin, y: currentY },
-        { x: margin + imgW + 10, y: currentY },
-        { x: margin, y: currentY + imgH + 18 },
-        { x: margin + imgW + 10, y: currentY + imgH + 18 }
-      ];
-      photos.slice(0, 4).forEach((photo, idx) => {
-        const pos = positions[idx];
-        try {
-          doc.setFillColor(248, 250, 252);
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(pos.x - 2, pos.y - 2, imgW + 4, imgH + 14, 'FD');
-          doc.addImage(photo, 'JPEG', pos.x, pos.y, imgW, imgH);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.setTextColor(30, 41, 59);
-          doc.text(`Foto ${idx + 1}: Registro de Campo`, pos.x + imgW / 2, pos.y + imgH + 7, { align: 'center' });
-        } catch (e) {
-          console.warn(`Erro ao inserir foto ${idx + 1} no PDF:`, e);
-        }
-      });
-    } else {
-      // 5 photos layout
-      const row1W = 82;
-      const row1H = 56;
-      const row2W = 56;
-      const row2H = 42;
 
-      const positions = [
-        { x: margin, y: currentY, w: row1W, h: row1H },
-        { x: margin + row1W + 10, y: currentY, w: row1W, h: row1H },
-        { x: margin, y: currentY + row1H + 16, w: row2W, h: row2H },
-        { x: margin + row2W + 7, y: currentY + row1H + 16, w: row2W, h: row2H },
-        { x: margin + (row2W + 7) * 2, y: currentY + row1H + 16, w: row2W, h: row2H }
-      ];
-
-      photos.slice(0, 5).forEach((photo, idx) => {
-        const pos = positions[idx];
-        try {
-          doc.setFillColor(248, 250, 252);
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(pos.x - 2, pos.y - 2, pos.w + 4, pos.h + 12, 'FD');
-          doc.addImage(photo, 'JPEG', pos.x, pos.y, pos.w, pos.h);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          doc.setTextColor(30, 41, 59);
-          doc.text(`Foto ${idx + 1}`, pos.x + pos.w / 2, pos.y + pos.h + 6, { align: 'center' });
-        } catch (e) {
-          console.warn(`Erro ao inserir foto ${idx + 1} no PDF:`, e);
-        }
-      });
-    }
-
-    // Technical signature on Page 6 bottom
-    doc.setDrawColor(148, 163, 184);
-    doc.line(margin + 30, pageHeight - 32, pageWidth - margin - 30, pageHeight - 32);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
-    doc.text(initialData.electrician1Name || 'Eletricista 1', pageWidth / 2, pageHeight - 27, { align: 'center' });
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Matrícula: ${initialData.electrician1Matricula || 'N/A'}`, pageWidth / 2, pageHeight - 23, { align: 'center' });
+      // Rodapé técnico em cada página de foto
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin + 40, pageHeight - 16, pageWidth - margin - 40, pageHeight - 16);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Responsável: ${initialData.electrician1Name || 'Eletricista'} (Matrícula: ${initialData.electrician1Matricula || 'N/A'})${initialData.electrician2Name ? ` | ${initialData.electrician2Name} (Matrícula: ${initialData.electrician2Matricula || 'N/A'})` : ''}`,
+        pageWidth / 2,
+        pageHeight - 12,
+        { align: 'center' }
+      );
+    });
   }
 
   // Save / Download PDF

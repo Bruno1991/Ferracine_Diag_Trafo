@@ -56,7 +56,7 @@ const partialAnalysis = performFullDiagnosticAnalysis([
   partial,
   { ...partial, id: 2, label: 'M2', timestamp: '', isRecorded: false, isLocked: true },
   { ...partial, id: 3, label: 'M3', timestamp: '', isRecorded: false, isLocked: true }
-], transformer, '5m');
+], transformer, '10m');
 assert(partial.avgVoltagePhaseNeutral === 0 && partial.avgVoltagePhasePhase === 0, 'Entrada parcial nao pode produzir media trifasica.');
 assert(getMissingMeasurementFields(partial, transformer).includes('Vbn'), 'Campos ausentes da medicao parcial nao foram detectados.');
 assert(partialAnalysis.prodist.voltageStatus === 'A MEDIR', 'Entrada parcial nao pode receber classificacao PRODIST.');

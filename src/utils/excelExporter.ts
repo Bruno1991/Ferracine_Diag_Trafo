@@ -36,9 +36,10 @@ export function exportDiagnosticToExcel({
     ['UTM Coordenada Norte (N)', initialData.utm?.northing || 'N/A'],
     ['Latitude', initialData.utm?.latitude || 'N/A'],
     ['Longitude', initialData.utm?.longitude || 'N/A'],
+    ['Anotações / Observações Técnicas', initialData.technicalNotes || 'N/A'],
     [],
     ['DADOS NOMINAIS DO TRANSFORMADOR (BANCO DE DADOS)', ''],
-    ['Categoria', transformer.category === 'NOVO' ? 'NOVO' : 'RECONDICIONADO'],
+    ['Categoria', transformer.category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'USADO'],
     ['Tipo de Fase', transformer.phaseType],
     ['Potência Nominal (kVA)', transformer.powerKva],
     ['Tensão Primária Nominal (V)', transformer.primaryVoltageV],
@@ -78,7 +79,7 @@ export function exportDiagnosticToExcel({
 
   const stageLabel = (id: number) => analysis.cycleMode === '5s'
     ? `M${id} (T=${(id - 1) * 5} s — modo de teste)`
-    : `M${id} (T=${(id - 1) * (analysis.cycleMode === '5m' ? 5 : 10)} min)`;
+    : `M${id} (T=${(id - 1) * 10} min)`;
   const sheet2Rows = measurements.map((m) => [
     stageLabel(m.id),
     m.timestamp || 'N/A',

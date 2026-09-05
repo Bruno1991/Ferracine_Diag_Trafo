@@ -74,7 +74,10 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 1. Seleção e Dados de Placa do Transformador */}
+      {/* 1. Dados Iniciais e Localização GPS / UTM */}
+      <GpsLocationForm initialData={initialData} onChange={setInitialData} />
+
+      {/* 2. Seleção e Dados de Placa do Transformador */}
       <TransformerSelector
         selectedTransformer={selectedTransformer}
         onSelectTransformer={setSelectedTransformer}
@@ -85,9 +88,6 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
         initialData={initialData}
         onChangeInitialData={setInitialData}
       />
-
-      {/* 2. Dados Iniciais e Localização GPS / UTM */}
-      <GpsLocationForm initialData={initialData} onChange={setInitialData} />
 
       {/* 3. Medições Temporizadas */}
       <TimedMeasurements
@@ -139,7 +139,35 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
       {/* 6. Registros Fotográficos do Transformador */}
       <PhotoUploader photos={photos} onPhotosChange={setPhotos} />
 
-      {/* 7. Painel de Finalização e Exportação */}
+      {/* 7. Anotações e Observações Técnicas do Eletricista */}
+      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-3 transition-colors duration-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              7. ANOTAÇÕES / OBSERVAÇÕES TÉCNICAS (RELATÓRIO DO ELETRICISTA)
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Campo livre para o eletricista registrar inspeções visuais de campo, anomalias, estado de conservação, ruídos, vazamento de óleo ou parecer técnico para o laudo.
+            </p>
+          </div>
+          <span className="self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            {(initialData.technicalNotes || '').length} caracteres
+          </span>
+        </div>
+
+        <div>
+          <textarea
+            rows={5}
+            value={initialData.technicalNotes || ''}
+            onChange={(e) => setInitialData({ ...initialData, technicalNotes: e.target.value })}
+            placeholder="Descreva aqui o parecer técnico, observações da instalação, integridade física do transformador, inspeção das buchas, testes de aterramento ou anomalias encontradas durante a medição..."
+            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md p-3 text-xs sm:text-sm text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-900 focus:border-blue-500 focus:outline-none transition resize-y"
+          />
+        </div>
+      </div>
+
+      {/* 8. Painel de Finalização e Exportação */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg p-4 sm:p-5 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 mt-2 transition-colors duration-200">
         <div>
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">

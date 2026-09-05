@@ -1,6 +1,6 @@
 export type TransformerType = 'NOVO' | 'RECONDICIONADO' | 'USADO';
 export type PhaseType = 'TRIFASICO' | 'MONOFASICO';
-export type MeasurementCycleMode = '5s' | '5m' | '10m';
+export type MeasurementCycleMode = '5s' | '10m';
 export type TransformerCatalogSource = 'INMETRO' | 'ETU' | 'FIELD';
 export type InmetroValidationStatus =
   | 'COERENTE_ETU'
@@ -116,6 +116,7 @@ export interface InitialDiagnosticData {
   transformerTag: string;
   transformerBrand?: string;
   serialNumber?: string;
+  technicalNotes?: string;
 }
 
 export interface SingleMeasurement {

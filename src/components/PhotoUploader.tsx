@@ -54,7 +54,8 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({ photos, onPhotosCh
     if (!e.target.files || e.target.files.length === 0) return;
 
     const files = Array.from(e.target.files);
-    const availableSlots = 5 - photos.length;
+    const MAX_PHOTOS = 15;
+    const availableSlots = MAX_PHOTOS - photos.length;
     const selectedFiles = files.slice(0, availableSlots);
 
     try {
@@ -80,14 +81,14 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({ photos, onPhotosCh
         <div>
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
             <Camera className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR (ATÉ 5 FOTOS)
+            REGISTROS FOTOGRÁFICOS DO TRANSFORMADOR (ATÉ 15 FOTOS)
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Anexe imagens da placa, buchas, caixa de ligação e instalação em campo. As fotos serão incluídas no laudo PDF.
+            Anexe imagens da placa, buchas, caixa de ligação e instalação em campo. Cada foto sairá em uma página dedicada no laudo PDF sem distorção.
           </p>
         </div>
         <span className="self-start sm:self-center text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-          {photos.length} / 5 Fotos
+          {photos.length} / 15 Fotos
         </span>
       </div>
 
@@ -118,8 +119,8 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({ photos, onPhotosCh
           </div>
         ))}
 
-        {/* Upload Slot / Dropzone if < 5 photos */}
-        {photos.length < 5 && (
+        {/* Upload Slot / Dropzone if < 15 photos */}
+        {photos.length < 15 && (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}

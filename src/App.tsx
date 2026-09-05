@@ -211,12 +211,13 @@ export default function App() {
     electrician1Matricula: '',
     electrician2Name: '',
     electrician2Matricula: '',
-    transformerTag: ''
+    transformerTag: '',
+    technicalNotes: ''
   });
 
   const cleanTransformer: TransformerSpec = {
     id: '',
-    category: 'NOVO',
+    category: 'USADO',
     phaseType: 'TRIFASICO',
     powerKva: 0,
     primaryVoltageV: 0,
@@ -234,7 +235,7 @@ export default function App() {
 
   const [selectedTransformer, setSelectedTransformer] = useState<TransformerSpec>(cleanTransformer);
   const [selectedTap, setSelectedTap] = useState<string>('');
-  const [cycleMode, setCycleMode] = useState<MeasurementCycleMode>('5m');
+  const [cycleMode, setCycleMode] = useState<MeasurementCycleMode>('10m');
 
   // 3 Measurements State (Zeroed / Ready for Technician Input)
   const [measurements, setMeasurements] = useState<SingleMeasurement[]>([
@@ -257,7 +258,7 @@ export default function App() {
     },
     {
       id: 2,
-      label: '2ª Medição (T = 5 min)',
+      label: '2ª Medição (T = 10 min)',
       timestamp: '',
       isLocked: true,
       isRecorded: false,
@@ -274,7 +275,7 @@ export default function App() {
     },
     {
       id: 3,
-      label: '3ª Medição (T = 10 min)',
+      label: '3ª Medição (T = 20 min)',
       timestamp: '',
       isLocked: true,
       isRecorded: false,
@@ -409,13 +410,14 @@ export default function App() {
       electrician1Matricula: '',
       electrician2Name: '',
       electrician2Matricula: '',
-      transformerTag: ''
+      transformerTag: '',
+      technicalNotes: ''
     });
 
     setPhotos([]);
     setSelectedTransformer({ ...cleanTransformer });
     setSelectedTap('');
-    setCycleMode('5m');
+    setCycleMode('10m');
 
     setMeasurements([
       processSingleMeasurement(
@@ -429,7 +431,7 @@ export default function App() {
       ),
       processSingleMeasurement(
         {
-          id: 2, label: '2ª Medição (T = 5 min)', timestamp: '', isLocked: true, isRecorded: false,
+          id: 2, label: '2ª Medição (T = 10 min)', timestamp: '', isLocked: true, isRecorded: false,
           van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
           powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
           avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0
@@ -438,7 +440,7 @@ export default function App() {
       ),
       processSingleMeasurement(
         {
-          id: 3, label: '3ª Medição (T = 10 min)', timestamp: '', isLocked: true, isRecorded: false,
+          id: 3, label: '3ª Medição (T = 20 min)', timestamp: '', isLocked: true, isRecorded: false,
           van: 0, vbn: 0, vcn: 0, vab: 0, vbc: 0, vca: 0, ia: 0, ib: 0, ic: 0, in: 0,
           powerFactor: 0.92, avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0,
           avgCurrent: 0, totalKva: 0, loadingPercent: 0, fdtpPercent: 0

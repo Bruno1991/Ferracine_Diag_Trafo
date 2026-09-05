@@ -20,8 +20,8 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   onCycleModeChange,
   onAllCompleted
 }) => {
-  const intervalSeconds = cycleMode === '5s' ? 5 : cycleMode === '5m' ? 300 : 600;
-  const intervalMinutes = cycleMode === '5s' ? 0.0833 : cycleMode === '5m' ? 5 : 10;
+  const intervalSeconds = cycleMode === '5s' ? 5 : 600;
+  const intervalMinutes = cycleMode === '5s' ? 0.0833 : 10;
 
   // Timer 1 (Between Meas 1 and Meas 2)
   const [timer1Seconds, setTimer1Seconds] = useState<number>(intervalSeconds);
@@ -200,14 +200,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-              3. MEDIÇÕES TEMPORIZADAS (3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEG' : cycleMode === '5m' ? '5 MINUTOS' : '10 MINUTOS'})
+              3. MEDIÇÕES TEMPORIZADAS (3 TESTES - INTERVALO DE {cycleMode === '5s' ? '5 SEGUNDOS' : '10 MINUTOS'})
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
               Coleta de tensões fase-neutro, fase-fase e correntes para diagnóstico contínuo
             </p>
             {cycleMode === '5s' && (
               <p className="text-[10px] text-amber-700 dark:text-amber-300 font-bold font-mono mt-1">
-                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; não representa campanha regulatória PRODIST.
+                MODO DE TESTE: o ciclo de 5 s valida cálculos e interface; o ciclo de 10 min é para operação de campo.
               </p>
             )}
           </div>
@@ -229,22 +229,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              5 SEG
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onCycleModeChange('5m');
-                if (!isTimer1Running) setTimer1Seconds(300);
-                if (!isTimer2Running) setTimer2Seconds(300);
-              }}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono transition cursor-pointer ${
-                cycleMode === '5m'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              5 MIN
+              5 SEG (TESTES)
             </button>
             <button
               type="button"
@@ -259,14 +244,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              10 MIN
+              10 MIN (OPERAÇÃO)
             </button>
           </div>
 
           <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200">
             <Timer className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span className="text-[11px] font-mono font-bold">
-              TEMPO RECOMENDADO: {cycleMode === '5s' ? '10 SEG' : cycleMode === '5m' ? '10 MIN' : '20 MIN'}
+              TEMPO RECOMENDADO: {cycleMode === '5s' ? '10 SEG' : '20 MIN'}
             </span>
           </div>
         </div>
@@ -440,7 +425,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             className="w-full py-1.5 px-3 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer mt-1"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>REGISTRAR 1ª MEDIÇÃO (+{cycleMode === '5s' ? '5 SEG' : cycleMode === '5m' ? '5 MIN' : '10 MIN'} TIMER)</span>
+            <span>REGISTRAR 1ª MEDIÇÃO (+{cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)</span>
           </button>
         </div>
 
@@ -460,7 +445,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   2
                 </span>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  2ª Medição (T = {cycleMode === '5s' ? '5 seg' : cycleMode === '5m' ? '5 min' : '10 min'})
+                  2ª Medição (T = {cycleMode === '5s' ? '5 seg' : '10 min'})
                 </h3>
               </div>
 
@@ -638,7 +623,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   className="w-full py-1.5 px-3 rounded text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer mt-1"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>REGISTRAR 2ª MEDIÇÃO (+{cycleMode === '5s' ? '5 SEG' : cycleMode === '5m' ? '5 MIN' : '10 MIN'} TIMER)</span>
+                  <span>REGISTRAR 2ª MEDIÇÃO (+{cycleMode === '5s' ? '5 SEG' : '10 MIN'} TIMER)</span>
                 </button>
               </>
             )}
@@ -661,7 +646,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   3
                 </span>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                  3ª Medição (T = {cycleMode === '5s' ? '10 seg' : cycleMode === '5m' ? '10 min' : '20 min'})
+                  3ª Medição (T = {cycleMode === '5s' ? '10 seg' : '20 min'})
                 </h3>
               </div>
 

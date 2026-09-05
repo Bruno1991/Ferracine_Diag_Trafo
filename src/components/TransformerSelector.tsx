@@ -47,7 +47,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
   initialData,
   onChangeInitialData
 }) => {
-  const [category, setCategory] = useState<TransformerType>(selectedTransformer.category || 'NOVO');
+  const [category, setCategory] = useState<TransformerType>(selectedTransformer.category === 'NOVO' ? 'USADO' : (selectedTransformer.category || 'USADO'));
   const [phaseType, setPhaseType] = useState<PhaseType>(selectedTransformer.phaseType || 'TRIFASICO');
   
   // TAP Configuration State
@@ -523,20 +523,20 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
             <button
               type="button"
               onClick={() => {
-                setCategory('NOVO');
-                const norm = computeNominalLossesAndEfficiency(numPower, phaseType, 'NOVO', 0, 0, windingMaterial);
+                setCategory('USADO');
+                const norm = computeNominalLossesAndEfficiency(numPower, phaseType, 'USADO', 0, 0, windingMaterial);
                 setNoLoadLossW(norm.noLoadLossW || '');
                 setLoadLoss75cW(norm.loadLoss75cW || '');
-                updateActiveTransformer({ category: 'NOVO', noLoadLossW: norm.noLoadLossW, loadLoss75cW: norm.loadLoss75cW });
+                updateActiveTransformer({ category: 'USADO', noLoadLossW: norm.noLoadLossW, loadLoss75cW: norm.loadLoss75cW });
               }}
               className={`p-2 rounded border text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-                category === 'NOVO'
-                  ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-600 dark:border-blue-500 text-blue-900 dark:text-blue-200 ring-1 ring-blue-500/50'
+                category === 'USADO'
+                  ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-600 dark:border-amber-500 text-amber-900 dark:text-amber-200 ring-1 ring-amber-500/50'
                   : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
               }`}
             >
               <Zap className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span>NOVO</span>
+              <span>USADO</span>
             </button>
 
             <button
@@ -549,13 +549,13 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
                 updateActiveTransformer({ category: 'RECONDICIONADO', noLoadLossW: norm.noLoadLossW, loadLoss75cW: norm.loadLoss75cW });
               }}
               className={`p-2 rounded border text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-                category === 'RECONDICIONADO' || category === 'USADO'
+                category === 'RECONDICIONADO'
                   ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-600 dark:border-purple-500 text-purple-900 dark:text-purple-200 ring-1 ring-purple-500/50'
                   : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
               }`}
             >
               <Shield className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-              <span>USADO / RECONDICIONADO</span>
+              <span>RECONDICIONADO</span>
             </button>
           </div>
         </div>
