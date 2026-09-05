@@ -1,40 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Database, Zap, Shield, Sliders, PlusCircle, RefreshCw, Save, Check, Search, X } from 'lucide-react';
-import { TransformerSpec, TransformerType, PhaseType, InitialDiagnosticData, InmetroTransformerModel } from '../types';
-import { computeNominalLossesAndEfficiency } from '../utils/electricalCalculations';
-import { isCommunityTransformer } from '../utils/githubSync';
-
-export function buildTransformerNameOrId(
-  brand?: string,
-  phaseType: PhaseType = 'TRIFASICO',
-  powerKva: number = 0,
-  primaryVoltageV: number = 13800,
-  secondaryVoltageV: number = 220,
-  secondaryNeutralV: number = 127,
-  oilType?: string,
-  windingMaterial?: string,
-  categoryOrState?: string
-): string {
-  const brandClean = (brand?.trim() || 'MARCA').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-  const phaseClean = phaseType.toLowerCase(); // 'monofasico', 'trifasico'
-  const powerStr = `${powerKva}kva`;
-  const primKvStr = primaryVoltageV >= 1000 ? `${primaryVoltageV / 1000}kv` : `${primaryVoltageV}v`;
-  const secStr = secondaryNeutralV > 0 ? `${secondaryVoltageV}v/${secondaryNeutralV}v` : `${secondaryVoltageV}v`;
-  const oilClean = (oilType || 'MINERAL').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const matClean = (windingMaterial || 'ALUMINIO').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const catClean = (categoryOrState || 'NOVO').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-  return `${brandClean}-${phaseClean}-${powerStr}-${primKvStr}-${secStr}-${oilClean}-${matClean}-${catClean}`;
-}
+import React from 'react';
+import { Zap } from 'lucide-react';
+import { TransformerSpec, PhaseType, InitialDiagnosticData } from '../types';
 
 interface TransformerSelectorProps {
   selectedTransformer: TransformerSpec;
   onSelectTransformer: (spec: TransformerSpec) => void;
-  selectedTap: string;
-  onTapChange: (tap: string) => void;
-  allTransformers: TransformerSpec[];
-  inmetroModels?: InmetroTransformerModel[];
-  onAddTransformer: (newTrafo: TransformerSpec) => void;
   initialData?: InitialDiagnosticData;
   onChangeInitialData?: (updated: InitialDiagnosticData) => void;
 }
@@ -42,640 +12,50 @@ interface TransformerSelectorProps {
 export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
   selectedTransformer,
   onSelectTransformer,
-  selectedTap,
-  onTapChange,
-  allTransformers,
-  inmetroModels = [],
-  onAddTransformer,
   initialData,
   onChangeInitialData
 }) => {
-  const [category, setCategory] = useState<TransformerType>(selectedTransformer.category === 'NOVO' ? 'USADO' : (selectedTransformer.category || 'USADO'));
-  const [phaseType, setPhaseType] = useState<PhaseType>(selectedTransformer.phaseType || 'TRIFASICO');
-  
-  // TAP Configuration State
-  const [tapCount, setTapCount] = useState<number>(5);
-  const [activeTapIndex, setActiveTapIndex] = useState<number>(3);
-  const [tapVoltages, setTapVoltages] = useState<{ [pos: number]: number }>({
-    1: 0,
-    2: 0,
-    3: 0,
-    4: 0,
-    5: 0
-  });
+  const phaseType = selectedTransformer.phaseType || 'TRIFASICO';
+  const powerKva = selectedTransformer.powerKva || '';
+  const primaryVoltageV = selectedTransformer.primaryVoltageV || '';
+  const secondaryVoltageV = selectedTransformer.secondaryVoltageV || '';
+  const secondaryNeutralV = selectedTransformer.secondaryNeutralV || '';
 
-  const calculateDefaultTapVoltages = (count: number, primV: number): { [pos: number]: number } => {
-    const result: { [pos: number]: number } = {};
-    if (!primV || primV <= 0) {
-      for (let i = 1; i <= count; i++) {
-        result[i] = 0;
-      }
-      return result;
-    }
-
-    if (count === 5) {
-      result[1] = Math.round(primV * 1.05);
-      result[2] = Math.round(primV * 1.025);
-      result[3] = Math.round(primV);
-      result[4] = Math.round(primV * 0.975);
-      result[5] = Math.round(primV * 0.95);
-    } else if (count === 3) {
-      result[1] = Math.round(primV * 1.05);
-      result[2] = Math.round(primV);
-      result[3] = Math.round(primV * 0.95);
-    } else {
-      const center = Math.ceil(count / 2);
-      const maxOffset = 0.05;
-      const step = count > 1 ? (maxOffset * 2) / (count - 1) : 0;
-      for (let i = 1; i <= count; i++) {
-        const factor = 1 + (center - i) * step;
-        result[i] = Math.round(primV * factor);
-      }
-    }
-    return result;
-  };
-
-  // Sync TAP voltages on primary voltage change if default
-  useEffect(() => {
-    const numPrim = typeof primaryVoltageV === 'number' ? primaryVoltageV : 0;
-    if (numPrim > 0) {
-      const defaults = calculateDefaultTapVoltages(tapCount, numPrim);
-      setTapVoltages(defaults);
-      notifyTapChange(activeTapIndex, tapCount, defaults);
-    }
-  }, [selectedTransformer.primaryVoltageV]);
-
-  const notifyTapChange = (activePos: number, count: number, voltages: { [pos: number]: number }) => {
-    const v = voltages[activePos];
-    const vStr = v && v > 0 ? `${v} V (${(v / 1000).toFixed(3)} kV)` : 'Tensão N/I';
-    onTapChange(`TAP ${activePos} (${vStr}) — ${count} TAPs Totais`);
-  };
-
-  const handleTapCountChange = (newCount: number) => {
-    const validCount = Math.max(1, Math.min(15, newCount));
-    setTapCount(validCount);
-    const newActive = Math.min(activeTapIndex, validCount);
-    setActiveTapIndex(newActive);
-
-    const numPrim = typeof primaryVoltageV === 'number' ? primaryVoltageV : 0;
-    const defaults = calculateDefaultTapVoltages(validCount, numPrim);
-    setTapVoltages(defaults);
-    notifyTapChange(newActive, validCount, defaults);
-    updateActiveTransformer({ tapCount: validCount, activeTapIndex: newActive, tapVoltages: defaults });
-  };
-
-  const handleTapVoltageChange = (pos: number, voltage: number) => {
-    const updated = { ...tapVoltages, [pos]: voltage };
-    setTapVoltages(updated);
-    notifyTapChange(activeTapIndex, tapCount, updated);
-    updateActiveTransformer({ tapCount, activeTapIndex, tapVoltages: updated });
-  };
-
-  const handleSelectActiveTap = (pos: number) => {
-    setActiveTapIndex(pos);
-    notifyTapChange(pos, tapCount, tapVoltages);
-    updateActiveTransformer({ tapCount, activeTapIndex: pos, tapVoltages });
-  };
-
-  const handleResetDefaultTaps = () => {
-    const numPrim = typeof primaryVoltageV === 'number' ? primaryVoltageV : 0;
-    const defaults = calculateDefaultTapVoltages(tapCount, numPrim);
-    setTapVoltages(defaults);
-    notifyTapChange(activeTapIndex, tapCount, defaults);
-    updateActiveTransformer({ tapCount, activeTapIndex, tapVoltages: defaults });
-  };
-  const [powerKva, setPowerKva] = useState<number | ''>(selectedTransformer.powerKva || '');
-  const [primaryVoltageV, setPrimaryVoltageV] = useState<number | ''>(selectedTransformer.primaryVoltageV || '');
-  const [secondaryVoltageV, setSecondaryVoltageV] = useState<number | ''>(selectedTransformer.secondaryVoltageV || '');
-  const [secondaryNeutralV, setSecondaryNeutralV] = useState<number | ''>(selectedTransformer.secondaryNeutralV || '');
-  const [impedancePercent, setImpedancePercent] = useState<number | ''>(selectedTransformer.impedancePercent || '');
-  const [oilTempC, setOilTempC] = useState<number | ''>(selectedTransformer.oilTempC || '');
-  const [windingMaterial, setWindingMaterial] = useState<'ALUMINIO' | 'COBRE'>(selectedTransformer.windingMaterial || 'ALUMINIO');
-  const [oilType, setOilType] = useState<'MINERAL' | 'VEGETAL'>(selectedTransformer.oilType || 'MINERAL');
-  const [manufacturingDate, setManufacturingDate] = useState<string>(selectedTransformer.manufacturingDate || '');
-  const [efficiencyLevel, setEfficiencyLevel] = useState<number | string>(selectedTransformer.efficiencyLevel || '');
-  const [noLoadLossW, setNoLoadLossW] = useState<number | ''>(selectedTransformer.noLoadLossW || '');
-  const [loadLoss75cW, setLoadLoss75cW] = useState<number | ''>(selectedTransformer.loadLoss75cW || '');
-  
-  const [savedSuccessMessage, setSavedSuccessMessage] = useState<string | null>(null);
-
-  // Estados para busca e filtragem no catálogo completo de placas
-  const [plateSearchTerm, setPlateSearchTerm] = useState<string>('');
-  const [plateCatalogSource, setPlateCatalogSource] = useState<'ALL' | 'FIELD' | 'INMETRO' | 'ETU'>('ALL');
-
-  // Converte os modelos cadastrados no banco INMETRO / PBE para especificações técnicas utilizáveis
-  const inmetroTransformers: TransformerSpec[] = useMemo(() => {
-    if (!inmetroModels || inmetroModels.length === 0) return [];
-    return inmetroModels.map((m) => {
-      const p0 = m.nominalConventionalNoLoadW ?? m.nominalReliableNoLoadW ?? 0;
-      const pTotal = m.nominalConventionalTotalW ?? m.nominalReliableTotalW ?? 0;
-      const pk = m.derivedLoadLossW ?? (pTotal > p0 ? pTotal - p0 : 0);
-      const totalLossW = pTotal > 0 ? pTotal : (p0 + pk);
-
-      const primaryVoltageV =
-        m.voltageClassKv === 15 ? 13800 :
-        m.voltageClassKv === 34.5 ? 34500 :
-        m.voltageClassKv === 24.2 ? 24200 :
-        (m.voltageClassKv >= 1000 ? m.voltageClassKv : (m.voltageClassKv * 1000 || 13800));
-
-      const secondaryVoltageV = m.phaseType === 'MONOFASICO' ? 240 : 220;
-      const secondaryNeutralV = m.phaseType === 'MONOFASICO' ? 120 : 127;
-      const impedancePercent = m.powerKva <= 45 ? 3.5 : m.powerKva <= 150 ? 4.0 : 4.5;
-      const windingMaterial: 'COBRE' | 'ALUMINIO' = m.windingCopper ? 'COBRE' : 'ALUMINIO';
-      const category: TransformerType = m.category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'USADO';
-
-      const modelLabel = m.model ? ` — Mod: ${m.model}` : '';
-      const uniqueId = `INMETRO-${m.manufacturer}-${m.powerKva}kVA-${m.phaseType}-${m.id}`.replace(/\s+/g, '_');
-
-      return {
-        id: uniqueId,
-        category,
-        state: m.category,
-        phaseType: m.phaseType,
-        powerKva: m.powerKva,
-        primaryVoltageV,
-        secondaryVoltageV,
-        secondaryNeutralV,
-        impedancePercent,
-        oilTempC: m.temperatureRise65C ? 65 : 55,
-        windingMaterial,
-        oilType: 'MINERAL' as const,
-        brand: m.manufacturer,
-        serialNumber: m.model || '',
-        noLoadLossW: p0,
-        loadLoss75cW: pk,
-        totalLossW,
-        efficiencyPercent: m.efficiencyPercent || 98.5,
-        standardReference: `INMETRO PBE — ${m.manufacturer}${modelLabel}`,
-        dateAdded: new Date().toISOString().slice(0, 10),
-        dataOrigin: 'NORMATIVE' as const
-      };
-    });
-  }, [inmetroModels]);
-
-  // Separação de perfis normativos ETU vs placas de campo (comunidade)
-  const etuTransformers = useMemo(() => {
-    return allTransformers.filter((t) => !isCommunityTransformer(t) && !t.id.startsWith('INMETRO-'));
-  }, [allTransformers]);
-
-  const fieldTransformers = useMemo(() => {
-    return allTransformers.filter((t) => isCommunityTransformer(t));
-  }, [allTransformers]);
-
-  // Catálogo completo unificado: Perfis ETU primeiro, depois Placas de Campo, depois INMETRO
-  const fullCatalog: TransformerSpec[] = useMemo(() => {
-    return [...etuTransformers, ...fieldTransformers, ...inmetroTransformers];
-  }, [etuTransformers, fieldTransformers, inmetroTransformers]);
-
-  // Catálogo filtrado por termo de busca e por origem
-  const filteredCatalog = useMemo(() => {
-    const search = plateSearchTerm.trim().toLowerCase();
-
-    const matchesSearch = (t: TransformerSpec) => {
-      if (!search) return true;
-      const str = `${t.id} ${t.brand || ''} ${t.serialNumber || ''} ${t.powerKva}kva ${t.powerKva} kva ${t.phaseType} ${t.standardReference || ''}`.toLowerCase();
-      return str.includes(search);
-    };
-
-    const groups: { categoryName: string; items: TransformerSpec[] }[] = [];
-
-    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'ETU') {
-      const items = etuTransformers.filter(matchesSearch);
-      if (items.length > 0) groups.push({ categoryName: `⚡ Perfis Normativos Energisa ETU (${items.length})`, items });
-    }
-
-    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'FIELD') {
-      const items = fieldTransformers.filter(matchesSearch);
-      if (items.length > 0) groups.push({ categoryName: `📋 Placas de Campo / Técnicos (${items.length})`, items });
-    }
-
-    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'INMETRO') {
-      const items = inmetroTransformers.filter(matchesSearch);
-      if (items.length > 0) groups.push({ categoryName: `🏛️ Modelos Homologados INMETRO / PBE (${items.length})`, items });
-    }
-
-    return groups;
-  }, [plateSearchTerm, plateCatalogSource, etuTransformers, fieldTransformers, inmetroTransformers]);
-
-  // Sync state when selectedTransformer prop changes from outside
-  useEffect(() => {
-    setCategory(selectedTransformer.category || 'NOVO');
-    setPhaseType(selectedTransformer.phaseType || 'TRIFASICO');
-    setPowerKva(selectedTransformer.powerKva || '');
-    setPrimaryVoltageV(selectedTransformer.primaryVoltageV || '');
-    setSecondaryVoltageV(selectedTransformer.secondaryVoltageV || '');
-    setSecondaryNeutralV(selectedTransformer.secondaryNeutralV || '');
-    setImpedancePercent(selectedTransformer.impedancePercent || '');
-    setOilTempC(selectedTransformer.oilTempC || '');
-    setWindingMaterial(selectedTransformer.windingMaterial || 'ALUMINIO');
-    setOilType(selectedTransformer.oilType || 'MINERAL');
-    setManufacturingDate(selectedTransformer.manufacturingDate || '');
-    setEfficiencyLevel(selectedTransformer.efficiencyLevel || '');
-    setNoLoadLossW(selectedTransformer.noLoadLossW || '');
-    setLoadLoss75cW(selectedTransformer.loadLoss75cW || '');
-
-    if (initialData && onChangeInitialData && selectedTransformer.brand !== undefined && selectedTransformer.brand !== initialData.transformerBrand) {
-      onChangeInitialData({
-        ...initialData,
-        transformerBrand: selectedTransformer.brand,
-        serialNumber: selectedTransformer.serialNumber !== undefined ? selectedTransformer.serialNumber : initialData.serialNumber
-      });
-    }
-
-    if (selectedTransformer.tapCount) {
-      setTapCount(selectedTransformer.tapCount);
-    }
-    if (selectedTransformer.activeTapIndex) {
-      setActiveTapIndex(selectedTransformer.activeTapIndex);
-    }
-    if (selectedTransformer.tapVoltages) {
-      setTapVoltages(selectedTransformer.tapVoltages);
-      notifyTapChange(
-        selectedTransformer.activeTapIndex || 3,
-        selectedTransformer.tapCount || 5,
-        selectedTransformer.tapVoltages
-      );
-    }
-  }, [
-    selectedTransformer.id,
-    selectedTransformer.powerKva,
-    selectedTransformer.primaryVoltageV,
-    selectedTransformer.secondaryVoltageV,
-    selectedTransformer.secondaryNeutralV,
-    selectedTransformer.impedancePercent,
-    selectedTransformer.oilTempC,
-    selectedTransformer.windingMaterial,
-    selectedTransformer.oilType,
-    selectedTransformer.manufacturingDate,
-    selectedTransformer.efficiencyLevel,
-    selectedTransformer.tapCount,
-    selectedTransformer.activeTapIndex,
-    selectedTransformer.tapVoltages
-  ]);
-
-  const numPower = typeof powerKva === 'number' ? powerKva : 0;
-  const numP0 = typeof noLoadLossW === 'number' ? noLoadLossW : 0;
-  const numPk = typeof loadLoss75cW === 'number' ? loadLoss75cW : 0;
-
-  // Compute total loss and efficiency in real time
-  const calculatedLosses = computeNominalLossesAndEfficiency(
-    numPower,
-    phaseType,
-    category,
-    numP0,
-    numPk,
-    windingMaterial
-  );
-  const displayedEfficiencyPercent = selectedTransformer.state === 'REFERENCIA_NORMATIVA'
-    ? selectedTransformer.efficiencyPercent
-    : calculatedLosses.efficiencyPercent;
-
-  // Update active transformer spec on field changes
-  const updateActiveTransformer = (updates: Partial<TransformerSpec>) => {
-    const updatedCategory = updates.category !== undefined ? updates.category : category;
-    const updatedPhase = updates.phaseType !== undefined ? updates.phaseType : phaseType;
-    const updatedPower = updates.powerKva !== undefined ? updates.powerKva : (typeof powerKva === 'number' ? powerKva : 0);
-    const updatedPrimV = updates.primaryVoltageV !== undefined ? updates.primaryVoltageV : (typeof primaryVoltageV === 'number' ? primaryVoltageV : 0);
-    const updatedSecV = updates.secondaryVoltageV !== undefined ? updates.secondaryVoltageV : (typeof secondaryVoltageV === 'number' ? secondaryVoltageV : 0);
-    const updatedSecNeutV = updates.secondaryNeutralV !== undefined ? updates.secondaryNeutralV : (typeof secondaryNeutralV === 'number' ? secondaryNeutralV : 0);
-    const updatedImp = updates.impedancePercent !== undefined ? updates.impedancePercent : (typeof impedancePercent === 'number' ? impedancePercent : 0);
-    const updatedTemp = updates.oilTempC !== undefined ? updates.oilTempC : (typeof oilTempC === 'number' ? oilTempC : 0);
-    const updatedMat = updates.windingMaterial !== undefined ? updates.windingMaterial : windingMaterial;
-    const updatedOilType = updates.oilType !== undefined ? updates.oilType : oilType;
-    const updatedMfgDate = updates.manufacturingDate !== undefined ? updates.manufacturingDate : manufacturingDate;
-    const updatedEfficiencyLevel = updates.efficiencyLevel !== undefined ? updates.efficiencyLevel : efficiencyLevel;
-    const updatedP0 = updates.noLoadLossW !== undefined ? updates.noLoadLossW : (typeof noLoadLossW === 'number' ? noLoadLossW : 0);
-    const updatedPk = updates.loadLoss75cW !== undefined ? updates.loadLoss75cW : (typeof loadLoss75cW === 'number' ? loadLoss75cW : 0);
-    const updatedTapCount = updates.tapCount !== undefined ? updates.tapCount : tapCount;
-    const updatedActiveTapIndex = updates.activeTapIndex !== undefined ? updates.activeTapIndex : activeTapIndex;
-    const updatedTapVoltages = updates.tapVoltages !== undefined ? updates.tapVoltages : tapVoltages;
-
-    const computed = computeNominalLossesAndEfficiency(
-      updatedPower,
-      updatedPhase,
-      updatedCategory,
-      updatedP0,
-      updatedPk,
-      updatedMat
-    );
-
-    const updatedSpec: TransformerSpec = {
+  const updateField = (patch: Partial<TransformerSpec>) => {
+    const updated: TransformerSpec = {
       ...selectedTransformer,
-      id: selectedTransformer.id || buildTransformerNameOrId(
-        initialData?.transformerBrand,
-        updatedPhase,
-        updatedPower,
-        updatedPrimV,
-        updatedSecV,
-        updatedSecNeutV,
-        updatedOilType,
-        updatedMat,
-        updatedCategory
-      ),
-      category: updatedCategory,
-      state: updatedCategory === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'NOVO',
-      phaseType: updatedPhase,
-      powerKva: updatedPower,
-      primaryVoltageV: updatedPrimV,
-      secondaryVoltageV: updatedSecV,
-      secondaryNeutralV: updatedSecNeutV,
-      impedancePercent: updatedImp,
-      oilTempC: updatedTemp,
-      windingMaterial: updatedMat,
-      oilType: updatedOilType,
-      manufacturingDate: updatedMfgDate,
-      efficiencyLevel: updatedEfficiencyLevel,
-      noLoadLossW: computed.noLoadLossW,
-      loadLoss75cW: computed.loadLoss75cW,
-      totalLossW: computed.totalLossW,
-      efficiencyPercent: computed.efficiencyPercent,
-      standardReference: 'Dados da Placa do Transformador (Técnico)',
-      tapCount: updatedTapCount,
-      activeTapIndex: updatedActiveTapIndex,
-      tapVoltages: updatedTapVoltages
+      ...patch,
+      id: initialData?.transformerTag?.trim() || selectedTransformer.id || `TRAFO-${patch.powerKva ?? selectedTransformer.powerKva ?? 0}kVA`,
+      brand: initialData?.transformerBrand ?? selectedTransformer.brand,
+      standardReference: 'Dados Básicos Coletados em Campo (Técnico)'
     };
-
-    onSelectTransformer(updatedSpec);
+    onSelectTransformer(updated);
   };
 
-  const handleSaveToDatabase = () => {
-    if (!numPower || numPower === 0) {
-      alert('Preencha ao menos a Potência (kVA) do transformador para salvar no banco.');
-      return;
-    }
-
-    const primV = typeof primaryVoltageV === 'number' ? primaryVoltageV : 13800;
-    const secV = typeof secondaryVoltageV === 'number' ? secondaryVoltageV : 220;
-    const secN = typeof secondaryNeutralV === 'number' ? secondaryNeutralV : 127;
-
-    const baseId = buildTransformerNameOrId(
-      initialData?.transformerBrand,
-      phaseType,
-      numPower,
-      primV,
-      secV,
-      secN,
-      oilType,
-      windingMaterial,
-      category
-    );
-
-    let customId = baseId;
-    let counter = 1;
-    while (allTransformers.some((t) => t.id === customId)) {
-      customId = `${baseId}-${counter}`;
-      counter++;
-    }
-
-    const newSpec: TransformerSpec = {
-      id: customId,
-      category,
-      state: category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'NOVO',
-      phaseType,
-      powerKva: numPower,
-      primaryVoltageV: primV,
-      secondaryVoltageV: secV,
-      secondaryNeutralV: secN,
-      impedancePercent: typeof impedancePercent === 'number' ? impedancePercent : 3.5,
-      oilTempC: typeof oilTempC === 'number' ? oilTempC : 65,
-      windingMaterial,
-      oilType,
-      manufacturingDate: manufacturingDate || undefined,
-      efficiencyLevel: `${calculatedLosses.efficiencyPercent.toFixed(2)}%`,
-      brand: initialData?.transformerBrand,
-      serialNumber: initialData?.serialNumber,
-      noLoadLossW: calculatedLosses.noLoadLossW,
-      loadLoss75cW: calculatedLosses.loadLoss75cW,
-      totalLossW: calculatedLosses.totalLossW,
-      efficiencyPercent: calculatedLosses.efficiencyPercent,
-      standardReference: 'Placa Alimentada pelo Técnico',
-      dateAdded: new Date().toISOString().split('T')[0],
-      tapCount,
-      activeTapIndex,
-      tapVoltages: { ...tapVoltages }
-    };
-
-    // Check duplicate technical plate spec (permits saving if ANY technical field or state/category is different)
-    const isDuplicate = allTransformers.some((existing) => {
-      // 0. Situação / Estado do Equipamento (NOVO vs RECONDICIONADO)
-      const exCat = (existing.state || existing.category || 'NOVO').toUpperCase();
-      const newCat = (newSpec.state || newSpec.category || 'NOVO').toUpperCase();
-      if (exCat !== newCat) return false;
-
-      // 1. Marca / Fabricante
-      const exBrand = (existing.brand || '').trim().toLowerCase();
-      const newBrand = (newSpec.brand || '').trim().toLowerCase();
-      if (exBrand !== newBrand) return false;
-
-      // 2. Tipo de Fase
-      if (existing.phaseType !== newSpec.phaseType) return false;
-
-      // 3. Potência (kVA)
-      if (Number(existing.powerKva) !== Number(newSpec.powerKva)) return false;
-
-      // 4. Tensão Primária (V)
-      if (Number(existing.primaryVoltageV) !== Number(newSpec.primaryVoltageV)) return false;
-
-      // 5. Tensão Secundária F-F (V)
-      if (Number(existing.secondaryVoltageV) !== Number(newSpec.secondaryVoltageV)) return false;
-
-      // 6. Tensão Secundária F-N (V)
-      if (Number(existing.secondaryNeutralV) !== Number(newSpec.secondaryNeutralV)) return false;
-
-      // 7. Impedância (%Z)
-      if (Number(existing.impedancePercent) !== Number(newSpec.impedancePercent)) return false;
-
-      // 8. Temp. Óleo (°C)
-      if (Number(existing.oilTempC || 0) !== Number(newSpec.oilTempC || 0)) return false;
-
-      // 9. Perdas em Vazio P0 (W)
-      if (Number(existing.noLoadLossW) !== Number(newSpec.noLoadLossW)) return false;
-
-      // 10. Perdas em Carga Pk (W)
-      if (Number(existing.loadLoss75cW) !== Number(newSpec.loadLoss75cW)) return false;
-
-      // 11. Perdas Totais (W)
-      if (Number(existing.totalLossW) !== Number(newSpec.totalLossW)) return false;
-
-      // 12. Eficiência Nominal (%)
-      if (Number(existing.efficiencyPercent) !== Number(newSpec.efficiencyPercent)) return false;
-
-      // 13. Tipo de Óleo Isolante
-      if (existing.oilType !== newSpec.oilType) return false;
-
-      // 14. Material dos Enrolamentos
-      if (existing.windingMaterial !== newSpec.windingMaterial) return false;
-
-      // 15. Configuração do Comutador de TAPs (Tensão em cada posição)
-      const exTapCount = existing.tapCount !== undefined ? existing.tapCount : 5;
-      if (exTapCount !== newSpec.tapCount) return false;
-
-      const exTapVoltages = existing.tapVoltages || {};
-      for (let i = 1; i <= newSpec.tapCount; i++) {
-        if (Number(exTapVoltages[i] || 0) !== Number(newSpec.tapVoltages?.[i] || 0)) return false;
-      }
-
-      return true;
-    });
-
-    if (isDuplicate) {
-      alert('⚠️ Os dados técnicos desta placa já estão cadastrados no Banco de Dados! Para cadastrar uma nova placa, altere algum parâmetro técnico (potência, tensões, impedância, perdas, TAPs, etc.).');
-      return;
-    }
-
-    onAddTransformer(newSpec);
-    onSelectTransformer(newSpec);
-    setSavedSuccessMessage(`Placa ${newSpec.powerKva} kVA (${oilType === 'VEGETAL' ? 'Óleo Vegetal' : 'Óleo Mineral'}) salva no banco com sucesso!`);
-    setTimeout(() => setSavedSuccessMessage(null), 3500);
-  };
-
-  const handleSelectPreSavedModel = (id: string) => {
-    if (!id) {
-      onSelectTransformer({
-        id: '',
-        category: 'NOVO',
-        phaseType: 'TRIFASICO',
-        powerKva: 0,
-        primaryVoltageV: 0,
-        secondaryVoltageV: 0,
-        secondaryNeutralV: 0,
-        impedancePercent: 0,
-        oilTempC: 0,
-        noLoadLossW: 0,
-        loadLoss75cW: 0,
-        totalLossW: 0,
-        efficiencyPercent: 0,
-        standardReference: 'Dados da Placa do Transformador',
-        dateAdded: new Date().toISOString()
-      });
-      if (onChangeInitialData && initialData) {
-        onChangeInitialData({
-          ...initialData,
-          transformerBrand: '',
-          serialNumber: ''
-        });
-      }
-      return;
-    }
-    const found = fullCatalog.find((t) => t.id === id);
-    if (found) {
-      onSelectTransformer(found);
-      if (onChangeInitialData && initialData) {
-        onChangeInitialData({
-          ...initialData,
-          transformerBrand: found.brand || '',
-          serialNumber: found.serialNumber || initialData.serialNumber || ''
-        });
-      }
-    }
+  const handlePhaseChange = (newPhase: PhaseType) => {
+    updateField({ phaseType: newPhase });
   };
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-4">
-      {/* Header */}
+      {/* Cabeçalho do Módulo */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60">
-            <Database className="w-4 h-4" />
+          <div className="p-1.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60">
+            <Zap className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-              2. DADOS DA PLACA DO TRANSFORMADOR E BANCO TÉCNICO
+            <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+              <span>2. DADOS BÁSICOS DO TRANSFORMADOR</span>
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Preencha os dados reais da Placa do Equipamento para cálculo de Perdas e Eficiência
+              Preencha os dados básicos do equipamento coletados pelo técnico/eletricista em campo
             </p>
           </div>
         </div>
-
-        {savedSuccessMessage && (
-          <div className="text-[11px] font-bold font-mono text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 animate-in fade-in">
-            <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>{savedSuccessMessage}</span>
-          </div>
-        )}
       </div>
 
-      {/* 1. Carregar Dados de uma Placa Cadastrada no Banco de Dados (NO TOPO) */}
-      <div className="pb-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-          <label className="label-xs block text-blue-700 dark:text-blue-400 font-bold flex items-center gap-1.5">
-            <Database className="w-3.5 h-3.5" />
-            <span>CARREGAR DADOS DE UMA PLACA JÁ CADASTRADA NO BANCO DE DADOS</span>
-          </label>
-          <span className="text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400">
-            {fullCatalog.length} placas cadastradas (INMETRO, Campo, ETU)
-          </span>
-        </div>
-
-        {/* Filtros rápidos: busca por fabricante/kVA e filtro por origem */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div className="sm:col-span-2 relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              value={plateSearchTerm}
-              onChange={(e) => setPlateSearchTerm(e.target.value)}
-              placeholder="Filtrar por fabricante, modelo ou potência (ex: WEG, Romagnole, 45, 75, 112.5...)"
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded pl-8 pr-7 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-            />
-            {plateSearchTerm && (
-              <button
-                type="button"
-                onClick={() => setPlateSearchTerm('')}
-                className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          <select
-            value={plateCatalogSource}
-            onChange={(e) => setPlateCatalogSource(e.target.value as any)}
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 font-bold focus:border-blue-500 focus:outline-none cursor-pointer"
-          >
-            <option value="ALL">Todas as Fontes ({fullCatalog.length})</option>
-            <option value="ETU">⚡ Perfis ETU ({etuTransformers.length})</option>
-            <option value="FIELD">📋 Placas de Campo ({fieldTransformers.length})</option>
-            <option value="INMETRO">🏛️ Modelos INMETRO ({inmetroTransformers.length})</option>
-          </select>
-        </div>
-
-        {/* Dropdown agrupado com todas as placas disponíveis */}
-        <select
-          value={selectedTransformer.id || ''}
-          onChange={(e) => handleSelectPreSavedModel(e.target.value)}
-          className="w-full bg-slate-50 dark:bg-slate-900 border border-blue-300 dark:border-blue-700/80 rounded px-2.5 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono font-bold focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none cursor-pointer"
-        >
-          <option value="">-- Selecionar Placa do Banco de Dados (ou preencher campos abaixo) --</option>
-          {filteredCatalog.map((group) => (
-            <optgroup key={group.categoryName} label={group.categoryName}>
-              {group.items.map((t) => {
-                const isEtu = !isCommunityTransformer(t) && !t.id.startsWith('INMETRO-');
-                const isNormativeInmetro = t.id.startsWith('INMETRO-');
-
-                let label = '';
-                if (isEtu) {
-                  label = `${t.id} — %Z: ${t.impedancePercent}% | η: ${t.efficiencyPercent}%`;
-                } else if (isNormativeInmetro) {
-                  label = `${t.brand ? `[${t.brand}] ` : ''}${t.powerKva} kVA (${t.phaseType}) — ${t.primaryVoltageV >= 1000 ? `${t.primaryVoltageV / 1000}kV` : `${t.primaryVoltageV}V`}/${t.secondaryVoltageV}V | %Z: ${t.impedancePercent}% | η: ${t.efficiencyPercent}%${t.serialNumber ? ` | Mod: ${t.serialNumber}` : ''}`;
-                } else {
-                  label = `[CAMPO] ${t.brand ? `[${t.brand}] ` : ''}${t.id} — ${t.powerKva} kVA | %Z: ${t.impedancePercent}% | η: ${t.efficiencyPercent}%`;
-                }
-
-                return (
-                  <option key={t.id} value={t.id}>
-                    {label}
-                  </option>
-                );
-              })}
-            </optgroup>
-          ))}
-        </select>
-      </div>
-
-      {/* 2. Tipo de Fase */}
+      {/* 1. Tipo de Fase */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700">
         <label className="label-xs font-bold text-slate-800 dark:text-slate-200 uppercase">
           TIPO DE FASE DO TRANSFORMADOR
@@ -683,13 +63,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
         <div className="grid grid-cols-2 gap-2 w-full sm:w-72">
           <button
             type="button"
-            onClick={() => {
-              setPhaseType('MONOFASICO');
-              const norm = computeNominalLossesAndEfficiency(numPower, 'MONOFASICO', 'USADO', 0, 0, 'ALUMINIO');
-              setNoLoadLossW(norm.noLoadLossW || '');
-              setLoadLoss75cW(norm.loadLoss75cW || '');
-              updateActiveTransformer({ phaseType: 'MONOFASICO', noLoadLossW: norm.noLoadLossW, loadLoss75cW: norm.loadLoss75cW });
-            }}
+            onClick={() => handlePhaseChange('MONOFASICO')}
             className={`py-1.5 px-3 rounded border text-center text-xs font-bold transition cursor-pointer ${
               phaseType === 'MONOFASICO'
                 ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
@@ -701,13 +75,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              setPhaseType('TRIFASICO');
-              const norm = computeNominalLossesAndEfficiency(numPower, 'TRIFASICO', 'USADO', 0, 0, 'ALUMINIO');
-              setNoLoadLossW(norm.noLoadLossW || '');
-              setLoadLoss75cW(norm.loadLoss75cW || '');
-              updateActiveTransformer({ phaseType: 'TRIFASICO', noLoadLossW: norm.noLoadLossW, loadLoss75cW: norm.loadLoss75cW });
-            }}
+            onClick={() => handlePhaseChange('TRIFASICO')}
             className={`py-1.5 px-3 rounded border text-center text-xs font-bold transition cursor-pointer ${
               phaseType === 'TRIFASICO'
                 ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
@@ -719,9 +87,8 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
         </div>
       </div>
 
-      {/* 3. Dados Reais de Campo Coletados pelo Técnico */}
+      {/* 2. Dados Reais de Campo: Identificação e Localização */}
       <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-3">
-        {/* Identificação: TAG, MARCA, LOCAL */}
         {initialData && onChangeInitialData && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pb-2.5 border-b border-slate-200 dark:border-slate-700/80">
             <div>
@@ -729,7 +96,11 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               <input
                 type="text"
                 value={initialData.transformerTag || ''}
-                onChange={(e) => onChangeInitialData({ ...initialData, transformerTag: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  onChangeInitialData({ ...initialData, transformerTag: val });
+                  updateField({ id: val || selectedTransformer.id });
+                }}
                 placeholder="Ex: PTCA0121"
                 className="w-full bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:bg-white dark:focus:bg-slate-950 focus:border-amber-500 focus:outline-none"
               />
@@ -742,7 +113,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
                 onChange={(e) => {
                   const val = e.target.value;
                   onChangeInitialData({ ...initialData, transformerBrand: val });
-                  updateActiveTransformer({ brand: val });
+                  updateField({ brand: val });
                 }}
                 placeholder="Ex: TRAEL, WEG, Romagnole"
                 className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
@@ -761,9 +132,9 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
           </div>
         )}
 
-        {/* Grandezas Elétricas Principais */}
+        {/* 3. Grandezas Elétricas Básicas */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {/* Potencia kVA */}
+          {/* Potência kVA */}
           <div>
             <label className="label-xs mb-1 block">POTÊNCIA NOMINAL (kVA)</label>
             <input
@@ -773,22 +144,14 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               placeholder="Ex: 112.5"
               onChange={(e) => {
                 const val = e.target.value === '' ? '' : Number(e.target.value);
-                setPowerKva(val);
                 const numV = val === '' ? 0 : val;
-                const norm = computeNominalLossesAndEfficiency(numV, phaseType, 'USADO', 0, 0, 'ALUMINIO');
-                setNoLoadLossW(norm.noLoadLossW || '');
-                setLoadLoss75cW(norm.loadLoss75cW || '');
-                updateActiveTransformer({
-                  powerKva: numV,
-                  noLoadLossW: norm.noLoadLossW,
-                  loadLoss75cW: norm.loadLoss75cW
-                });
+                updateField({ powerKva: numV });
               }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
           </div>
 
-          {/* Tensao Primario */}
+          {/* Tensão Primária */}
           <div>
             <label className="label-xs mb-1 block">TENSÃO PRIMÁRIA (V)</label>
             <input
@@ -798,14 +161,13 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               placeholder="Ex: 13800"
               onChange={(e) => {
                 const val = e.target.value === '' ? '' : Number(e.target.value);
-                setPrimaryVoltageV(val);
-                updateActiveTransformer({ primaryVoltageV: val === '' ? 0 : val });
+                updateField({ primaryVoltageV: val === '' ? 0 : val });
               }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
           </div>
 
-          {/* Tensao Secundario F-F */}
+          {/* Tensão Secundária F-F */}
           <div>
             <label className="label-xs mb-1 block">TENSÃO SEC. F-F (V)</label>
             <input
@@ -814,14 +176,13 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               placeholder="Ex: 220 ou 380"
               onChange={(e) => {
                 const val = e.target.value === '' ? '' : Number(e.target.value);
-                setSecondaryVoltageV(val);
-                updateActiveTransformer({ secondaryVoltageV: val === '' ? 0 : val });
+                updateField({ secondaryVoltageV: val === '' ? 0 : val });
               }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
           </div>
 
-          {/* Tensao Secundario F-N */}
+          {/* Tensão Secundária F-N */}
           <div>
             <label className="label-xs mb-1 block">TENSÃO SEC. F-N (V)</label>
             <input
@@ -830,113 +191,11 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               placeholder="Ex: 127 ou 220"
               onChange={(e) => {
                 const val = e.target.value === '' ? '' : Number(e.target.value);
-                setSecondaryNeutralV(val);
-                updateActiveTransformer({ secondaryNeutralV: val === '' ? 0 : val });
+                updateField({ secondaryNeutralV: val === '' ? 0 : val });
               }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
           </div>
-        </div>
-
-        {/* TAP em Operação no Campo - Seletor Simples e Direto */}
-        <div className="p-2.5 bg-amber-50/60 dark:bg-slate-900/60 rounded-lg border border-amber-200/80 dark:border-slate-700 space-y-2">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-1.5">
-              <Sliders className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <label className="label-xs font-bold text-amber-950 dark:text-amber-200 uppercase">
-                TAP EM OPERAÇÃO (POSIÇÃO LIGADA NO CAMPO)
-              </label>
-            </div>
-            <span className="text-[11px] font-mono font-bold text-amber-900 dark:text-amber-300">
-              Ativo: TAP {activeTapIndex} ({tapVoltages[activeTapIndex] ? `${tapVoltages[activeTapIndex]} V / ${(tapVoltages[activeTapIndex] / 1000).toFixed(3)} kV` : 'Nominal'})
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {[1, 2, 3, 4, 5].map((pos) => {
-              const isActive = activeTapIndex === pos;
-              const v = tapVoltages[pos] || (typeof primaryVoltageV === 'number' && primaryVoltageV > 0
-                ? Math.round(primaryVoltageV * (1 + (3 - pos) * 0.025))
-                : 0);
-              const vStr = v > 0 ? `${(v / 1000).toFixed(3)} kV` : `TAP ${pos}`;
-              return (
-                <button
-                  key={pos}
-                  type="button"
-                  onClick={() => handleSelectActiveTap(pos)}
-                  className={`py-2 px-2 rounded border text-xs font-mono font-bold transition flex flex-col items-center justify-center cursor-pointer ${
-                    isActive
-                      ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-500/40'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <span className="font-extrabold text-xs">TAP {pos}</span>
-                  <span className={`text-[10px] ${isActive ? 'text-amber-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {vStr}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Perdas e Eficiência Nominal */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-2 border-t border-slate-200 dark:border-slate-700">
-          <div>
-            <label className="label-xs mb-1 block">PERDAS EM VAZIO P0 (W)</label>
-            <input
-              type="number"
-              value={noLoadLossW}
-              placeholder="Ex: 366"
-              onChange={(e) => {
-                const val = e.target.value === '' ? '' : Number(e.target.value);
-                setNoLoadLossW(val);
-                updateActiveTransformer({ noLoadLossW: val === '' ? 0 : val });
-              }}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="label-xs mb-1 block">PERDAS EM CARGA Pk (W)</label>
-            <input
-              type="number"
-              value={loadLoss75cW}
-              placeholder="Ex: 1410"
-              onChange={(e) => {
-                const val = e.target.value === '' ? '' : Number(e.target.value);
-                setLoadLoss75cW(val);
-                updateActiveTransformer({ loadLoss75cW: val === '' ? 0 : val });
-              }}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="label-xs mb-1 block">PERDAS TOTAIS (P0+Pk)</label>
-            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1 text-xs font-mono font-extrabold text-slate-800 dark:text-slate-200">
-              {calculatedLosses.totalLossW} W
-            </div>
-          </div>
-
-          <div>
-            <label className="label-xs mb-1 block text-emerald-800 dark:text-emerald-400">EFICIÊNCIA NOMINAL (%)</label>
-            <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded px-2.5 py-1 text-xs font-mono font-extrabold text-emerald-800 dark:text-emerald-300">
-              {displayedEfficiencyPercent}%
-            </div>
-          </div>
-        </div>
-
-        {/* Actions Bar: Salvar no Banco de Dados */}
-        <div className="flex items-center justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
-          <button
-            type="button"
-            onClick={handleSaveToDatabase}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition cursor-pointer"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>Salvar Esta Placa no Banco de Dados</span>
-          </button>
         </div>
       </div>
     </div>

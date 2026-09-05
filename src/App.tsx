@@ -2,13 +2,10 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Header } from './components/Header';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DiagnosticPage } from './pages/DiagnosticPage';
-import { DatabasePage } from './pages/DatabasePage';
 import { NormsPage } from './pages/NormsPage';
-import { SettingsPage } from './pages/SettingsPage';
 
 import {
   InitialDiagnosticData,
-  InmetroTransformerModel,
   TransformerSpec,
   SingleMeasurement,
   MeasurementCycleMode
@@ -16,13 +13,7 @@ import {
 import { processSingleMeasurement, performFullDiagnosticAnalysis } from './utils/electricalCalculations';
 import { generateTransformerDiagnosticPdf } from './utils/pdfGenerator';
 import { exportDiagnosticToExcel } from './utils/excelExporter';
-import {
-  getOfflineDatabaseStatus,
-  getOfflineInmetroModels,
-  loadBundledOfflineDatabase,
-  type OfflineDatabaseStatus
-} from './utils/sqliteAndSplitLoader';
-import { isCommunityTransformer } from './utils/githubSync';
+import { loadBundledOfflineDatabase } from './utils/sqliteAndSplitLoader';
 import {
   clearDiagnosticDraft,
   loadDiagnosticDraft,
@@ -61,152 +52,17 @@ export default function App() {
   };
 
   // Helper to ensure all transformers in the array have unique IDs
-  const sanitizeTransformersList = (list: TransformerSpec[]): TransformerSpec[] => {
-    const seen = new Set<string>();
-    return list.map((item, idx) => {
-      let baseId = item.id || `TRAFO-${idx}`;
-      let uniqueId = baseId;
-      let counter = 1;
-      while (seen.has(uniqueId)) {
-        uniqueId = `${baseId}-${counter}`;
-        counter++;
-      }
-      seen.add(uniqueId);
-      return {
-        ...item,
-        id: uniqueId,
-        dataOrigin: item.dataOrigin || (item.state === 'REFERENCIA_NORMATIVA' ? 'NORMATIVE' : 'COMMUNITY')
-      };
-    });
-  };
-
-  // Database of transformers with local persistence
-  const [transformers, setTransformers] = useState<TransformerSpec[]>(() => {
-    try {
-      const saved = localStorage.getItem('tx_analytix_transformers');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return sanitizeTransformersList(parsed);
-      }
-    } catch (e) {
-      console.error('Failed to parse local transformers', e);
-    }
-    return [];
-  });
-
-  const initialDbStatus = getOfflineDatabaseStatus();
-  const [offlineDatabaseState, setOfflineDatabaseState] = useState({
-    loading: !initialDbStatus.loaded,
-    error: '',
-    transformerCount: initialDbStatus.transformerCount,
-    inmetroModelCount: initialDbStatus.inmetroModelCount,
-    fuseCount: initialDbStatus.fuseCount,
-    schemaVersion: initialDbStatus.schemaVersion,
-    generatedAt: initialDbStatus.generatedAt,
-    source: initialDbStatus.source
-  });
-
-  const [inmetroModels, setInmetroModels] = useState<InmetroTransformerModel[]>(() => getOfflineInmetroModels());
-
-  const applyDatabaseStatus = (status: OfflineDatabaseStatus, error = '') => {
-    setOfflineDatabaseState({
-      loading: false,
-      error,
-      transformerCount: status.transformerCount,
-      inmetroModelCount: status.inmetroModelCount,
-      fuseCount: status.fuseCount,
-      schemaVersion: status.schemaVersion,
-      generatedAt: status.generatedAt,
-      source: status.source
-    });
-    setInmetroModels(getOfflineInmetroModels());
-  };
-
   useEffect(() => {
-    let isMounted = true;
-    setOfflineDatabaseState((prev) => ({ ...prev, loading: true, error: '' }));
-
-    void loadBundledOfflineDatabase()
-      .then((bundledTransformers) => {
-        if (!isMounted) return;
-        const status = getOfflineDatabaseStatus();
-        applyDatabaseStatus(status);
-        setTransformers((prev) => {
-          const savedCommunity = prev.filter(isCommunityTransformer);
-          const seen = new Set<string>();
-          const merged: TransformerSpec[] = [];
-
-          for (const item of [...bundledTransformers, ...savedCommunity]) {
-            if (!seen.has(item.id)) {
-              seen.add(item.id);
-              merged.push(item);
-            }
-          }
-          return sanitizeTransformersList(merged);
-        });
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        const status = getOfflineDatabaseStatus();
-        applyDatabaseStatus(status, err instanceof Error ? err.message : 'Erro ao carregar banco offline');
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const handleUpdateTransformers = (updatedList: TransformerSpec[]) => {
-    const cleanList = sanitizeTransformersList(updatedList);
-    setTransformers(cleanList);
     try {
-      const communityOnly = cleanList.filter(isCommunityTransformer);
-      localStorage.setItem('tx_analytix_transformers', JSON.stringify(communityOnly));
-    } catch (e) {
-      console.error('Failed to save transformers to local storage', e);
+      localStorage.removeItem('tx_analytix_transformers');
+      localStorage.removeItem('tx_community_sync');
+    } catch {
+      // ignore
     }
-  };
-
-  const handleAddTransformer = (newTrafo: TransformerSpec) => {
-    const exists = transformers.some((t) => t.id === newTrafo.id);
-    let finalTrafo = { ...newTrafo, dataOrigin: newTrafo.dataOrigin || 'COMMUNITY' as const };
-    if (exists) {
-      finalTrafo = {
-        ...finalTrafo,
-        id: `${newTrafo.id}-${Date.now().toString().slice(-4)}`
-      };
-    }
-    const updated = [finalTrafo, ...transformers];
-    handleUpdateTransformers(updated);
-  };
-
-  const handleSyncApplied = (
-    communityTransformers: TransformerSpec[],
-    normativeTransformers: TransformerSpec[] | null,
-    status: OfflineDatabaseStatus
-  ) => {
-    applyDatabaseStatus(status);
-    setInmetroModels(getOfflineInmetroModels());
-    setTransformers((prev) => {
-      const baseNormative = normativeTransformers || prev.filter((item) => !isCommunityTransformer(item));
-      const seen = new Set<string>();
-      const merged: TransformerSpec[] = [];
-
-      for (const item of [...baseNormative, ...communityTransformers]) {
-        if (!seen.has(item.id)) {
-          seen.add(item.id);
-          merged.push(item);
-        }
-      }
-      return sanitizeTransformersList(merged);
+    void loadBundledOfflineDatabase().catch((err) => {
+      console.warn('Erro ao inicializar base SQLite offline:', err);
     });
-
-    try {
-      localStorage.setItem('tx_analytix_transformers', JSON.stringify(communityTransformers));
-    } catch (e) {
-      console.error('Failed to persist synced community transformers', e);
-    }
-  };
+  }, []);
 
   // Initial Diagnostic Data
   const [initialData, setInitialData] = useState<InitialDiagnosticData>({
@@ -244,7 +100,6 @@ export default function App() {
   };
 
   const [selectedTransformer, setSelectedTransformer] = useState<TransformerSpec>(cleanTransformer);
-  const [selectedTap, setSelectedTap] = useState<string>('');
   const [cycleMode, setCycleMode] = useState<MeasurementCycleMode>('10m');
 
   const createInitialMeasurement = (): SingleMeasurement => ({
@@ -478,7 +333,6 @@ export default function App() {
 
     setPhotos([]);
     setSelectedTransformer({ ...cleanTransformer });
-    setSelectedTap('');
     setCycleMode('10m');
 
     setMeasurements([createInitialMeasurement()]);
@@ -502,14 +356,8 @@ export default function App() {
                 <DiagnosticPage
                   initialData={initialData}
                   setInitialData={setInitialData}
-                  transformers={transformers}
-                  setTransformers={setTransformers}
-                  inmetroModels={inmetroModels}
-                  setInmetroModels={setInmetroModels}
                   selectedTransformer={selectedTransformer}
                   setSelectedTransformer={setSelectedTransformer}
-                  selectedTap={selectedTap}
-                  setSelectedTap={setSelectedTap}
                   cycleMode={cycleMode}
                   setCycleMode={setCycleMode}
                   measurements={measurements}
@@ -525,9 +373,6 @@ export default function App() {
                   setPhotos={setPhotos}
                   theme={theme}
                   onToggleTheme={toggleTheme}
-                  handleAddTransformer={handleAddTransformer}
-                  handleUpdateTransformers={handleUpdateTransformers}
-                  handleSyncApplied={handleSyncApplied}
                   onHexCanvasRendered={(url) => {
                     hexDataUrlRef.current = url;
                   }}
@@ -535,31 +380,8 @@ export default function App() {
               }
             />
             <Route
-              path="/database"
-              element={
-                <DatabasePage
-                  transformers={transformers}
-                  setTransformers={setTransformers}
-                  inmetroModels={inmetroModels}
-                  setInmetroModels={setInmetroModels}
-                  handleAddTransformer={handleAddTransformer}
-                  handleUpdateTransformers={handleUpdateTransformers}
-                />
-              }
-            />
-            <Route
               path="/norms"
               element={<NormsPage />}
-            />
-            <Route
-              path="/settings"
-              element={
-                <SettingsPage
-                  transformers={transformers}
-                  databaseState={offlineDatabaseState}
-                  handleSyncApplied={handleSyncApplied}
-                />
-              }
             />
             <Route path="*" element={<Navigate to="/diagnostic" replace />} />
           </Routes>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, Database, BookOpen, Settings, Sun, Moon } from 'lucide-react';
+import { Cpu, BookOpen, Sun, Moon } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 interface HeaderProps {
@@ -80,13 +80,13 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Bottom Row: Navigation Tabs right below Logo (No scrollbar, responsive grid) */}
+        {/* Bottom Row: Navigation Tabs right below Logo (Responsive grid with 2 tabs) */}
         <nav className="w-full bg-slate-100 dark:bg-slate-950 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+          <div className="grid grid-cols-2 gap-1.5">
             <NavLink
               to="/diagnostic"
               className={({ isActive }) =>
-                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                `flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
@@ -97,22 +97,9 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="truncate">Diagnóstico</span>
             </NavLink>
             <NavLink
-              to="/database"
-              className={({ isActive }) =>
-                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-                }`
-              }
-            >
-              <Database className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Transformadores Cadastrados</span>
-            </NavLink>
-            <NavLink
               to="/norms"
               className={({ isActive }) =>
-                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                `flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
@@ -121,19 +108,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <BookOpen className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">Base Normativa</span>
-            </NavLink>
-            <NavLink
-              to="/settings"
-              className={({ isActive }) =>
-                `flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-                }`
-              }
-            >
-              <Settings className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Configurações</span>
             </NavLink>
           </div>
         </nav>

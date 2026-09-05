@@ -2,7 +2,6 @@ import React from 'react';
 import {
   InitialDiagnosticData,
   TransformerSpec,
-  InmetroTransformerModel,
   SingleMeasurement,
   MeasurementCycleMode,
   DiagnosticAnalysis,
@@ -18,14 +17,8 @@ import { FileSpreadsheet, FileText, RotateCcw } from 'lucide-react';
 interface DiagnosticPageProps {
   initialData: InitialDiagnosticData;
   setInitialData: React.Dispatch<React.SetStateAction<InitialDiagnosticData>>;
-  transformers: TransformerSpec[];
-  setTransformers: React.Dispatch<React.SetStateAction<TransformerSpec[]>>;
-  inmetroModels: InmetroTransformerModel[];
-  setInmetroModels: React.Dispatch<React.SetStateAction<InmetroTransformerModel[]>>;
   selectedTransformer: TransformerSpec;
   setSelectedTransformer: React.Dispatch<React.SetStateAction<TransformerSpec>>;
-  selectedTap: string;
-  setSelectedTap: React.Dispatch<React.SetStateAction<string>>;
   cycleMode: MeasurementCycleMode;
   setCycleMode: React.Dispatch<React.SetStateAction<MeasurementCycleMode>>;
   measurements: SingleMeasurement[];
@@ -41,13 +34,6 @@ interface DiagnosticPageProps {
   setPhotos: (photos: string[]) => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
-  handleAddTransformer: (newTrafo: TransformerSpec) => void;
-  handleUpdateTransformers: (updated: TransformerSpec[]) => void;
-  handleSyncApplied: (
-    communityTransformers: TransformerSpec[],
-    normativeTransformers: TransformerSpec[] | null,
-    status: any
-  ) => void;
   onHexCanvasRendered?: (url: string) => void;
 }
 
@@ -55,11 +41,8 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
   const {
     initialData,
     setInitialData,
-    transformers,
     selectedTransformer,
     setSelectedTransformer,
-    selectedTap,
-    setSelectedTap,
     cycleMode,
     setCycleMode,
     measurements,
@@ -68,11 +51,9 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
     handleExportPdf,
     handleExportExcel,
     handleNewDiagnostic,
-    inmetroModels,
     photos,
     setPhotos,
     theme,
-    handleAddTransformer,
     onHexCanvasRendered
   } = props;
 
@@ -81,15 +62,10 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
       {/* 1. Dados Iniciais e Localização GPS / UTM */}
       <GpsLocationForm initialData={initialData} onChange={setInitialData} />
 
-      {/* 2. Seleção e Dados de Placa do Transformador */}
+      {/* 2. Seleção e Dados Básicos do Transformador */}
       <TransformerSelector
         selectedTransformer={selectedTransformer}
         onSelectTransformer={setSelectedTransformer}
-        selectedTap={selectedTap}
-        onTapChange={setSelectedTap}
-        allTransformers={transformers}
-        inmetroModels={inmetroModels}
-        onAddTransformer={handleAddTransformer}
         initialData={initialData}
         onChangeInitialData={setInitialData}
       />

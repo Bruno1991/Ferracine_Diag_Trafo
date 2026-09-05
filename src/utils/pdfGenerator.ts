@@ -252,7 +252,7 @@ export async function generateTransformerDiagnosticPdf({
 
   currentY += block1Height + 4;
 
-  // Block 2: Dados e Especificações Nominais do Transformador (Campos de Campo)
+  // Block 2: Dados Básicos do Transformador (Campos de Campo)
   const specRows: Array<{ left: string; right?: string }> = [];
 
   specRows.push({
@@ -261,13 +261,14 @@ export async function generateTransformerDiagnosticPdf({
   });
 
   if (transformer.primaryVoltageV > 0 || transformer.secondaryVoltageV > 0) {
-    const volt = transformer.secondaryVoltageV > 0
-      ? `Tensão Primária / Secundária: ${transformer.primaryVoltageV ? `${transformer.primaryVoltageV / 1000} kV / ` : ''}${transformer.secondaryVoltageV}V (F-F)`
-      : '';
-    const tapInfo = transformer.primaryVoltageV > 0
+    const secStr = transformer.secondaryNeutralV && transformer.secondaryNeutralV > 0
+      ? `${transformer.secondaryVoltageV}V / ${transformer.secondaryNeutralV}V`
+      : `${transformer.secondaryVoltageV}V (F-F)`;
+    const volt = `Tensão Primária / Secundária: ${transformer.primaryVoltageV ? `${transformer.primaryVoltageV / 1000} kV / ` : ''}${secStr}`;
+    const primInfo = transformer.primaryVoltageV > 0
       ? `Tensão Primária Nominal: ${(transformer.primaryVoltageV / 1000).toFixed(3)} kV`
       : undefined;
-    specRows.push({ left: volt, right: tapInfo });
+    specRows.push({ left: volt, right: primInfo });
   }
 
   const tag = (initialData.transformerTag || (transformer as any).tag)?.trim();
@@ -280,16 +281,8 @@ export async function generateTransformerDiagnosticPdf({
     });
   }
 
-  if (transformer.noLoadLossW > 0 || transformer.loadLoss75cW > 0) {
-    specRows.push({
-      left: transformer.noLoadLossW > 0 ? `Perdas em Vazio (P0): ${transformer.noLoadLossW} W` : '',
-      right: transformer.loadLoss75cW > 0 ? `Perdas em Carga (Pk 75°C): ${transformer.loadLoss75cW} W` : undefined
-    });
-  }
-
-  const eff = transformer.efficiencyPercent > 0 ? `Eficiência Nominal: ${transformer.efficiencyPercent}%` : '';
-  const norm = transformer.standardReference?.trim() ? `Norma: ${transformer.standardReference.trim()}` : 'Norma: Dados da Placa do Transformador (Técnico)';
-  specRows.push({ left: eff || norm, right: eff ? norm : undefined });
+  const norm = 'Dados Básicos Coletados em Campo (Técnico)';
+  specRows.push({ left: `Padrão: ${norm}` });
 
   const block2Height = Math.max(18, 10 + specRows.length * 6.2);
   doc.setFillColor(248, 250, 252);
@@ -298,7 +291,7 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('2. DADOS E ESPECIFICAÇÕES NOMINAIS DO TRANSFORMADOR', margin + 4, currentY + 6);
+  doc.text('2. DADOS BÁSICOS DO TRANSFORMADOR', margin + 4, currentY + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);

@@ -50,8 +50,7 @@ function hasValidTransformerIdentity(transformer: TransformerSpec): boolean {
     (transformer.id || transformer.powerKva > 0) &&
     transformer.powerKva > 0 &&
     transformer.primaryVoltageV > 0 &&
-    transformer.secondaryVoltageV > 0 &&
-    transformer.impedancePercent > 0
+    transformer.secondaryVoltageV > 0
   );
 }
 
@@ -711,19 +710,23 @@ export function performFullDiagnosticAnalysis(
   const thermalCorrectionFactorKt = (thermalConstantTk + opTempC) / (thermalConstantTk + 75);
 
   // Perdas calculadas considerando a média quadrática das correntes de fase (Joule I²R):
-  const estimatedIronLossW = transformer.noLoadLossW;
+  const normLosses = computeNominalLossesAndEfficiency(transformer.powerKva, transformer.phaseType, 'USADO');
+  const baseNoLoadW = transformer.noLoadLossW && transformer.noLoadLossW > 0 ? transformer.noLoadLossW : normLosses.noLoadLossW;
+  const baseLoadLossW = transformer.loadLoss75cW && transformer.loadLoss75cW > 0 ? transformer.loadLoss75cW : normLosses.loadLoss75cW;
+
+  const estimatedIronLossW = baseNoLoadW;
   const currentRatioSquared = isTri
     ? (Math.pow(avgIa, 2) + Math.pow(avgIb, 2) + Math.pow(avgIc, 2)) / (3 * Math.pow(nominalCurrentSecondaryA || 1, 2))
     : (Math.pow(avgIa, 2) + Math.pow(avgIb, 2)) / (2 * Math.pow(nominalCurrentSecondaryA || 1, 2));
 
-  const estimatedCopperLossW = transformer.loadLoss75cW * currentRatioSquared * thermalCorrectionFactorKt;
-  const totalCalculatedLossW = estimatedIronLossW + estimatedCopperLossW;
+  const estimatedCopperLossW = Math.round(baseLoadLossW * currentRatioSquared * thermalCorrectionFactorKt);
+  const totalCalculatedLossW = Math.round(estimatedIronLossW + estimatedCopperLossW);
 
   const pf = validMeas.length > 0 ? validMeas[0].powerFactor || 0.92 : 0.92;
   const activePowerW = avgKvaMeasured * 1000 * pf;
   const calculatedEfficiencyPercent = (activePowerW + totalCalculatedLossW) > 0
-    ? (activePowerW / (activePowerW + totalCalculatedLossW)) * 100
-    : transformer.efficiencyPercent;
+    ? Number(((activePowerW / (activePowerW + totalCalculatedLossW)) * 100).toFixed(2))
+    : (transformer.efficiencyPercent > 0 ? transformer.efficiencyPercent : normLosses.efficiencyPercent);
 
   // Recomendação de Elo Fusível
   const recommendedFuse = findRecommendedFuse(
