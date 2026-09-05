@@ -367,10 +367,12 @@ export async function generateTransformerDiagnosticPdf({
         analysis.prodist.unbalanceStatus
       ],
       [
-        'Carregamento Máximo (% kVA)',
-        `${analysis.maxLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
-        `Pico ${analysis.maxLoadingPercent}% | Média ${analysis.avgLoadingPercent}%`,
-        analysis.loadingCondition
+        'Carregamento Máximo (% Inom / kVA)',
+        analysis.criticalPhase
+          ? `Pico ${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase}) | Méd. ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`
+          : `Pico ${analysis.maxLoadingPercent}% | Méd. ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
+        `Inom = ${analysis.nominalCurrentSecondaryA} A | NDU 006 / NBR 5356-7`,
+        analysis.loadingCondition.replace('_', ' ')
       ],
       [
         'Elo Fusível Primário Recomendado',
@@ -465,7 +467,7 @@ export async function generateTransformerDiagnosticPdf({
     isTri ? `${m.vab} / ${m.vbc} / ${m.vca} V` : `${m.vab} V`,
     isTri ? `${m.ia} / ${m.ib} / ${m.ic} A (In: ${m.in || 0}A)` : `${m.ia} / ${m.ib} A (In: ${m.in || 0}A)`,
     `${m.totalKva} kVA`,
-    `${m.loadingPercent}%`,
+    m.criticalPhase ? `${m.maxPhaseLoadingPercent}% (${m.criticalPhase})` : `${m.loadingPercent}%`,
     `${m.fdtpPercent}%`
   ]);
 
@@ -477,7 +479,7 @@ export async function generateTransformerDiagnosticPdf({
       isTri ? `${analysis.avgVab} / ${analysis.avgVbc} / ${analysis.avgVca} V` : `${analysis.avgVab} V`,
       isTri ? `${analysis.avgIa} / ${analysis.avgIb} / ${analysis.avgIc} A (In: ${analysis.avgIn || 0}A)` : `${analysis.avgIa} / ${analysis.avgIb} A (In: ${analysis.avgIn || 0}A)`,
       `${analysis.avgKvaMeasured} kVA`,
-      `${analysis.avgLoadingPercent}%`,
+      analysis.criticalPhase ? `${analysis.maxPhaseLoadingPercent}% (${analysis.criticalPhase})` : `${analysis.avgLoadingPercent}%`,
       `${analysis.prodist.fdtpPercent}%`
     ]);
   } else {
@@ -488,7 +490,7 @@ export async function generateTransformerDiagnosticPdf({
       isTri ? `${analysis.avgVab} / ${analysis.avgVbc} / ${analysis.avgVca} V` : `${analysis.avgVab} V`,
       isTri ? `${analysis.avgIa} / ${analysis.avgIb} / ${analysis.avgIc} A (In: ${analysis.avgIn || 0}A)` : `${analysis.avgIa} / ${analysis.avgIb} A (In: ${analysis.avgIn || 0}A)`,
       `${analysis.avgKvaMeasured} kVA`,
-      `${analysis.avgLoadingPercent}%`,
+      analysis.criticalPhase ? `${analysis.maxPhaseLoadingPercent}% (${analysis.criticalPhase})` : `${analysis.avgLoadingPercent}%`,
       `${analysis.prodist.fdtpPercent}%`
     ]);
   }
@@ -496,7 +498,7 @@ export async function generateTransformerDiagnosticPdf({
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Etapa de Teste', 'Horário Log', 'Tensão F-N (A/B/C)', 'Tensão F-F (AB/BC/CA)', 'Corrente (Ia/Ib/Ic) e Neutro', 'Carreg.', '% Carga', 'FDTP %']],
+    head: [['Etapa de Teste', 'Horário Log', 'Tensão F-N (A/B/C)', 'Tensão F-F (AB/BC/CA)', 'Corrente (Ia/Ib/Ic) e Neutro', 'Carreg.', '% Carga (Pico)', 'FDTP %']],
     body: rowsMeas,
     theme: 'striped',
     headStyles: {
@@ -553,31 +555,55 @@ export async function generateTransformerDiagnosticPdf({
     currentY = 30;
   }
 
-  doc.setFillColor(248, 250, 252);
-  doc.rect(margin, currentY, pageWidth - margin * 2, 48, 'FD');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('6. RECOMENDAÇÕES DE AJUSTE DE TAP E ELO FUSÍVEL DE PROTEÇÃO', margin + 4, currentY + 7);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(30, 41, 59);
-
   const tapLines = doc.splitTextToSize(
     `• Posição Recomendada para TAP: ${analysis.recommendedTap}\n  Diagnóstico do TAP: ${analysis.tapAdjustmentAdvice}`,
     pageWidth - margin * 2 - 8
   );
-  doc.text(tapLines, margin + 4, currentY + 15);
 
   const fuse = analysis.recommendedFuse;
   const fuseInfoStr = fuse
     ? `• Elo Fusível Primário Recomendado (NDU/ETU): Elo ${fuse.fuseCode} (Corrente Primária ~${(transformer.powerKva * 1000 / (Math.sqrt(3) * transformer.primaryVoltageV)).toFixed(2)} A)\n  Regra de Especificação: Elos de 1A a 5A são Tipo H (ex: 1H, 2H, 3H, 5H). Elos de 6A a 100A são Tipo K (ex: 6K, 8K, 10K, 15K, 20K, 25K).\n  Observação: ${fuse.notes}`
     : '• Elo Fusível Primário: Não especificado para este nível de tensão.';
-
   const fuseLines = doc.splitTextToSize(fuseInfoStr, pageWidth - margin * 2 - 8);
-  doc.text(fuseLines, margin + 4, currentY + 28);
+
+  let loadActionStr = '';
+  if ((analysis.maxPhaseLoadingPercent || 0) > 100) {
+    loadActionStr = `• Ação Operacional de Sobrecarga (NDU 006 item 11.3.3 / NBR 5356-7): ATENÇÃO CRÍTICA — A Fase ${analysis.criticalPhase || 'crítica'} opera a ${analysis.maxPhaseLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A). Sobrecarga assimétrica provoca queima recorrente de elos fusíveis e degradação térmica acelerada. É OBRIGATÓRIO o rebalanceamento imediato dos circuitos de BT (remanejamento de cargas da Fase ${analysis.criticalPhase || 'C'} para as demais fases).`;
+  } else if ((analysis.currentUnbalancePercent || 0) > 30) {
+    loadActionStr = `• Ação Operacional de Carga (NDU 006 / NDU 007): Desbalanceamento de corrente de ${analysis.currentUnbalancePercent}% detectado na BT. Recomenda-se redistribuição de cargas monofásicas entre fases para equilibrar correntes e mitigar perdas térmicas adicionais.`;
+  } else {
+    loadActionStr = '• Equilíbrio e Carregamento de Carga: Regime equilibrado e dentro da capacidade nominal contínua do equipamento.';
+  }
+  const loadLines = doc.splitTextToSize(loadActionStr, pageWidth - margin * 2 - 8);
+
+  const boxHeight = 16 + (tapLines.length + fuseLines.length + loadLines.length) * 3.8;
+
+  if (currentY + boxHeight > 275) {
+    doc.addPage();
+    drawHeader('CONTINUAÇÃO: RECOMENDAÇÕES TÉCNICAS', 2);
+    currentY = 30;
+  }
+
+  doc.setFillColor(248, 250, 252);
+  doc.rect(margin, currentY, pageWidth - margin * 2, boxHeight, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text('6. RECOMENDAÇÕES DE AJUSTE DE TAP, ELO FUSÍVEL E CARREGAMENTO', margin + 4, currentY + 7);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+
+  let textY = currentY + 13;
+  doc.text(tapLines, margin + 4, textY);
+  textY += tapLines.length * 3.8 + 2.5;
+
+  doc.text(fuseLines, margin + 4, textY);
+  textY += fuseLines.length * 3.8 + 2.5;
+
+  doc.text(loadLines, margin + 4, textY);
 
   // ==========================================
   // PAGE 3: ANÁLISE GRÁFICA FASORIAL (DIAGRAMA HEXAGONAL)
@@ -727,12 +753,13 @@ export async function generateTransformerDiagnosticPdf({
   currentY += 4;
 
   const formulaRows = [
-    ['Potência aparente trifásica', 'S = sqrt(3) x VFF,media x Imedia / 1000'],
-    ['Carregamento', 'Carga (%) = Smedida / Snominal x 100'],
-    ['FDTP — fórmula exata PRODIST', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
-    ['Desbalanço de corrente — triagem do app', '100 x maximo |Ifase-Imedia| / Imedia'],
-    ['Correção térmica', 'Kt = (Tk + Toleo) / (Tk + 75 C); Tk Cu=234,5 C e Tk Al=225 C'],
-    ['Rendimento estimado', 'eta = Pativa / (Pativa + P0 + Pk,calc) x 100']
+    ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van*Ia + Vbn*Ib + Vcn*Ic ou S = sqrt(3)*Vmed*Imed / 1000'],
+    ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (Ifase / Inom) x 100; Limite térmico do trafo governado pelo pico'],
+    ['FDTP — fórmula exata PRODIST Mód. 8', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
+    ['Desbalanço de corrente (triagem BT)', '100 x maximo |Ifase-Imedia| / Imedia (Orientativo para balanceamento NDU 006/007)'],
+    ['Perdas no cobre desbalanceadas', 'Pk(I) = Pk,75 x [(Ia^2 + Ib^2 + Ic^2) / (3 x Inom^2)] x Kt (Física das perdas Joule)'],
+    ['Correção térmica do enrolamento', 'Kt = (Tk + Toleo) / (Tk + 75 C); Tk Cu=234,5 C e Tk Al=225 C'],
+    ['Rendimento estimado sob carga', 'eta = Pativa / (Pativa + P0 + Pk,calc) x 100']
   ];
 
   autoTable(doc, {

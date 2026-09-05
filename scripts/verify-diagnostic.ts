@@ -100,6 +100,54 @@ assert(instantaneousAnalysis.dataQuality.status === 'VALIDO', 'Uma medicao indiv
 assert(instantaneousAnalysis.dataQuality.canIssueTapRecommendation, 'Medicao instantanea deve liberar recomendacao de TAP.');
 assert(!instantaneousAnalysis.recommendedTap.includes('BLOQUEADA'), 'Medicao instantanea nao pode ter TAP bloqueado.');
 
+// -------------------------------------------------------------
+// Caso Real de Campo: Trafo PTCA0121 (112.5 kVA / 220V - TRAEL)
+// Ocorrência 196638: Queima do elo fusível 5H na Fase C por sobrecarga
+// Medição: Van=121V, Vbn=120V, Vcn=120V, Ia=45A, Ib=300A, Ic=425A, In=380A
+// -------------------------------------------------------------
+const trafoPTCA0121 = transformers.find((item) =>
+  item.phaseType === 'TRIFASICO' &&
+  item.powerKva === 112.5 &&
+  item.primaryVoltageV === 13800 &&
+  item.secondaryVoltageV === 220
+);
+assert(trafoPTCA0121, 'Transformador de teste 112.5 kVA / 13.8 kV / 220 V não encontrado.');
+
+const ptca0121Raw: SingleMeasurement = {
+  id: 1,
+  label: '1ª Medição (T = 10 min pós-fechamento)',
+  timestamp: '10:00:00',
+  isLocked: false,
+  isRecorded: true,
+  van: 121, vbn: 120, vcn: 120,
+  vab: 206.3, vbc: 206.3, vca: 206.3,
+  ia: 45, ib: 300, ic: 425, in: 380,
+  powerFactor: 0.92,
+  avgVoltagePhaseNeutral: 0, avgVoltagePhasePhase: 0, avgCurrent: 0,
+  totalKva: 0, loadingPercent: 0, fdtpPercent: 0
+};
+const ptca0121Meas = processSingleMeasurement(ptca0121Raw, trafoPTCA0121);
+const ptca0121Analysis = performFullDiagnosticAnalysis([ptca0121Meas], trafoPTCA0121, '10m');
+
+// 1. Corrente nominal secundária ~295.2 A
+assert(Math.abs((ptca0121Analysis.nominalCurrentSecondaryA || 0) - 295.2) < 0.5, `Corrente nominal esperada ~295.2 A; obtida ${ptca0121Analysis.nominalCurrentSecondaryA}`);
+
+// 2. Carregamento da Fase C deve ser de aproximadamente 144.0%
+assert(ptca0121Meas.criticalPhase === 'C', `Fase crítica esperada C; obtida ${ptca0121Meas.criticalPhase}`);
+assert(Math.abs((ptca0121Meas.maxPhaseLoadingPercent || 0) - 144.0) < 0.5, `Carregamento de pico na Fase C esperado 144.0%; obtido ${ptca0121Meas.maxPhaseLoadingPercent}`);
+assert(Math.abs((ptca0121Meas.loadingPercentA || 0) - 15.2) < 0.5, `Carregamento da Fase A esperado ~15.2%; obtido ${ptca0121Meas.loadingPercentA}`);
+assert(Math.abs((ptca0121Meas.loadingPercentB || 0) - 101.6) < 0.5, `Carregamento da Fase B esperado ~101.6%; obtido ${ptca0121Meas.loadingPercentB}`);
+
+// 3. Condição diagnóstica DEVE ser SOBRECARGA_CRITICA (e NÃO "IDEAL"!)
+assert(ptca0121Analysis.loadingCondition === 'SOBRECARGA_CRITICA', `Condição de carga esperada SOBRECARGA_CRITICA; obtida ${ptca0121Analysis.loadingCondition}`);
+
+// 4. TAP NÃO DEVE SER BLOQUEADO por desbalanço de corrente de campo (NDU 006 / NDU 007)
+assert(ptca0121Analysis.dataQuality.canIssueTapRecommendation, 'Desbalanço de carga de campo não pode bloquear a recomendação de TAP.');
+assert(!ptca0121Analysis.recommendedTap.includes('BLOQUEADA'), 'O TAP não deve ser bloqueado.');
+
+// 5. Elo fusível primário recomendado deve ser 5H (ETU-109 Tabela 16 para 112.5 kVA / 13.8 kV)
+assert(ptca0121Analysis.recommendedFuse?.fuseCode === '5H', `Elo esperado 5H; obtido ${ptca0121Analysis.recommendedFuse?.fuseCode}`);
+
 const serviceWorker = readFileSync(join(process.cwd(), 'public', 'sw.js'), 'utf8');
 assert(serviceWorker.includes('networkFirst') && serviceWorker.includes('ferracine-diag-trafo-v5'), 'Service worker deve atualizar navegacao sem perder o fallback offline.');
 

@@ -169,6 +169,11 @@ export interface SingleMeasurement {
   avgCurrent: number;
   totalKva: number;
   loadingPercent: number;
+  loadingPercentA?: number;
+  loadingPercentB?: number;
+  loadingPercentC?: number;
+  maxPhaseLoadingPercent?: number;
+  criticalPhase?: 'A' | 'B' | 'C' | 'EQUILIBRADO';
   fdtpPercent: number; // Fator de desbalanço de tensão
 }
 
@@ -208,6 +213,11 @@ export interface DiagnosticAnalysis {
   avgKvaMeasured: number;
   maxLoadingPercent: number;
   avgLoadingPercent: number;
+  maxPhaseLoadingPercent?: number;
+  criticalPhase?: 'A' | 'B' | 'C' | 'EQUILIBRADO';
+  loadingPercentA?: number;
+  loadingPercentB?: number;
+  loadingPercentC?: number;
   loadingCondition: 'SUB-CARREGADO' | 'IDEAL' | 'ELEVADO' | 'SOBRECARGA_MODERADA' | 'SOBRECARGA_CRITICA';
 
   // Specific Phase Validation Metrics & Alerts

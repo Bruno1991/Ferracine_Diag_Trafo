@@ -187,17 +187,37 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
 
         {/* Status 4: Carregamento Máximo */}
-        <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
+        <div className={`p-3 rounded-lg border flex flex-col justify-between ${
+          analysis.loadingCondition.includes('SOBRECARGA')
+            ? 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800/80'
+            : analysis.loadingCondition === 'ELEVADO'
+              ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800/80'
+              : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/80'
+        }`}>
           <div>
             <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
-              CARREGAMENTO MÁXIMO (% kVA)
+              CARREGAMENTO {analysis.criticalPhase ? `(PICO FASE ${analysis.criticalPhase})` : 'MÁXIMO (% Inom)'}
             </div>
-            <div className="text-lg font-extrabold text-blue-800 dark:text-blue-300 font-mono">
-              {analysis.maxLoadingPercent}% <span className="text-[11px] text-slate-600 dark:text-slate-400 font-normal">({analysis.maxKvaMeasured} kVA)</span>
+            <div className={`text-lg font-extrabold font-mono ${
+              analysis.loadingCondition.includes('SOBRECARGA')
+                ? 'text-red-700 dark:text-red-400'
+                : analysis.loadingCondition === 'ELEVADO'
+                  ? 'text-amber-700 dark:text-amber-400'
+                  : 'text-blue-800 dark:text-blue-300'
+            }`}>
+              {analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}%{' '}
+              <span className="text-[11px] text-slate-600 dark:text-slate-400 font-normal">
+                ({analysis.maxKvaMeasured} kVA | Inom: {analysis.nominalCurrentSecondaryA}A)
+              </span>
             </div>
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
-            Pico: <strong>{analysis.maxLoadingPercent}%</strong> | Média: <strong>{analysis.avgLoadingPercent}%</strong> | Condição pelo pico: <span className="font-bold text-slate-900 dark:text-slate-100">{analysis.loadingCondition}</span>
+            {analysis.criticalPhase ? (
+              <>Fases: <strong>A:{analysis.loadingPercentA}%</strong> | <strong>B:{analysis.loadingPercentB}%</strong> | <strong>C:{analysis.loadingPercentC}%</strong> • </>
+            ) : null}
+            Condição: <span className={`font-bold ${
+              analysis.loadingCondition.includes('SOBRECARGA') ? 'text-red-700 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'
+            }`}>{analysis.loadingCondition.replace('_', ' ')}</span>
           </p>
         </div>
       </div>
@@ -235,6 +255,16 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Operational Warning for Overload / Unbalance */}
+        {(analysis.maxPhaseLoadingPercent || 0) > 100 && (
+          <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-start gap-2">
+            <AlertOctagon className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-red-800 dark:text-red-300 leading-relaxed">
+              <strong>ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7):</strong> A Fase {analysis.criticalPhase || 'crítica'} opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase {analysis.criticalPhase || 'C'} para as demais fases.
+            </div>
+          </div>
+        )}
       </div>
 
     </div>

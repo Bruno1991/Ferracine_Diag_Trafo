@@ -191,12 +191,51 @@ export function processSingleMeasurement(
     }
   }
 
-  // Potência aparente em kVA
-  const totalKva = isTri
-    ? (Math.sqrt(3) * avgVff * avgI) / 1000
-    : (avgVff * avgI) / 1000;
+  // Corrente nominal secundária (A)
+  const nominalSecCurrent = calculateNominalSecondaryCurrent(transformer);
 
-  // Carregamento %
+  // Carregamento por fase e identificação da fase de pico
+  let loadingPercentA = 0;
+  let loadingPercentB = 0;
+  let loadingPercentC = 0;
+  let maxPhaseLoadingPercent = 0;
+  let criticalPhase: 'A' | 'B' | 'C' | 'EQUILIBRADO' = 'EQUILIBRADO';
+
+  if (nominalSecCurrent > 0) {
+    loadingPercentA = Math.round((meas.ia / nominalSecCurrent) * 1000) / 10;
+    loadingPercentB = Math.round((meas.ib / nominalSecCurrent) * 1000) / 10;
+    if (isTri) {
+      loadingPercentC = Math.round((meas.ic / nominalSecCurrent) * 1000) / 10;
+      const maxI = Math.max(meas.ia, meas.ib, meas.ic);
+      maxPhaseLoadingPercent = Math.round((maxI / nominalSecCurrent) * 1000) / 10;
+      if (meas.ic === maxI && (meas.ic > meas.ia || meas.ic > meas.ib)) criticalPhase = 'C';
+      else if (meas.ib === maxI && (meas.ib > meas.ia || meas.ib > meas.ic)) criticalPhase = 'B';
+      else if (meas.ia === maxI && (meas.ia > meas.ib || meas.ia > meas.ic)) criticalPhase = 'A';
+    } else {
+      const maxI = Math.max(meas.ia, meas.ib);
+      maxPhaseLoadingPercent = Math.round((maxI / nominalSecCurrent) * 1000) / 10;
+      if (meas.ia > meas.ib) criticalPhase = 'A';
+      else if (meas.ib > meas.ia) criticalPhase = 'B';
+    }
+  }
+
+  // Potência aparente em kVA: soma das potências por fase se tensões FN e correntes estiverem presentes (IEEE Std 1459)
+  let totalKva = 0;
+  if (isTri) {
+    if (meas.van > 0 && meas.vbn > 0 && meas.vcn > 0 && (meas.ia > 0 || meas.ib > 0 || meas.ic > 0)) {
+      totalKva = (meas.van * meas.ia + meas.vbn * meas.ib + meas.vcn * meas.ic) / 1000;
+    } else {
+      totalKva = (Math.sqrt(3) * avgVff * avgI) / 1000;
+    }
+  } else {
+    if (meas.van > 0 && meas.vbn > 0 && (meas.ia > 0 || meas.ib > 0)) {
+      totalKva = (meas.van * meas.ia + meas.vbn * meas.ib) / 1000;
+    } else {
+      totalKva = (avgVff * avgI) / 1000;
+    }
+  }
+
+  // Carregamento global do banco (% da potência nominal)
   const loadingPercent = transformer.powerKva > 0
     ? (totalKva / transformer.powerKva) * 100
     : 0;
@@ -225,6 +264,11 @@ export function processSingleMeasurement(
     avgCurrent: Math.round(avgI * 10) / 10,
     totalKva: Math.round(totalKva * 100) / 100,
     loadingPercent: Math.round(loadingPercent * 10) / 10,
+    loadingPercentA,
+    loadingPercentB,
+    loadingPercentC,
+    maxPhaseLoadingPercent,
+    criticalPhase,
     fdtpPercent: Math.round(fdtpPercent * 100) / 100
   };
 }
@@ -430,12 +474,13 @@ function validateMeasurementData(
         const avg = currents.reduce((sum, value) => sum + value, 0) / 3;
         const unbalance = avg > 0 ? Math.max(...currents.map((value) => Math.abs(value - avg))) / avg * 100 : 0;
         if (unbalance > currentLimit) {
+          const isExtreme = unbalance > 90;
           issues.push({
             measurementId: m.id,
             code: 'DESEQUILIBRIO_CORRENTE',
-            severity: unbalance > 50 ? 'CRITICAL' : 'WARNING',
-            title: `M${m.id}: correntes fortemente desbalanceadas`,
-            message: `Ia=${m.ia} A, Ib=${m.ib} A, Ic=${m.ic} A; desvio máximo ${unbalance.toFixed(1)}% (limiar de triagem do app: ${currentLimit.toFixed(0)}%).`
+            severity: isExtreme ? 'CRITICAL' : 'WARNING',
+            title: `M${m.id}: ${isExtreme ? 'desbalanceamento extremo de corrente' : 'desequilíbrio de carga na rede BT'}`,
+            message: `Ia=${m.ia} A, Ib=${m.ib} A, Ic=${m.ic} A; desvio ${unbalance.toFixed(1)}% (limiar: ${currentLimit.toFixed(0)}%). Recomenda-se remanejamento de carga entre as fases na rede secundária (NDU 006 / NDU 007).`
           });
         }
 
@@ -455,13 +500,14 @@ function validateMeasurementData(
       }
     }
 
-    if (m.loadingPercent > 100) {
+    const peakLoading = m.maxPhaseLoadingPercent || m.loadingPercent;
+    if (peakLoading > 100) {
       issues.push({
         measurementId: m.id,
         code: 'CARREGAMENTO',
-        severity: m.loadingPercent > 120 ? 'CRITICAL' : 'WARNING',
-        title: `M${m.id}: sobrecarga`,
-        message: `Carregamento ${m.loadingPercent.toFixed(1)}% (${m.totalKva.toFixed(2)} kVA) acima da potência nominal.`
+        severity: 'WARNING',
+        title: `M${m.id}: sobrecarga ${m.criticalPhase && m.criticalPhase !== 'EQUILIBRADO' ? `na Fase ${m.criticalPhase}` : ''} (${peakLoading.toFixed(1)}%)`,
+        message: `Corrente de pico ${peakLoading.toFixed(1)}% da capacidade nominal contínua do enrolamento. Risco de atuação de elo fusível e perda de vida útil (NBR 5356-7 / NDU 006).`
       });
     }
   });
@@ -482,8 +528,11 @@ function validateMeasurementData(
   }
 
   const hasCritical = issues.some((issue) => issue.severity === 'CRITICAL');
+  const hasFatalMeasurementError = issues.some((issue) =>
+    issue.severity === 'CRITICAL' && issue.code !== 'DESEQUILIBRIO_CORRENTE'
+  );
   const hasTrafo = hasValidTransformerIdentity(transformer);
-  const canIssueTap = !hasCritical && valid.length >= 1 && hasTrafo;
+  const canIssueTap = !hasFatalMeasurementError && valid.length >= 1 && hasTrafo;
   const canIssueReport = valid.length >= 1 && hasTrafo;
   return {
     status: hasCritical ? 'INCONSISTENTE' : issues.length > 0 ? 'ALERTA' : 'VALIDO',
@@ -623,11 +672,28 @@ export function performFullDiagnosticAnalysis(
   const maxLoadingPercent = transformer.powerKva > 0 ? (maxKvaMeasured / transformer.powerKva) * 100 : 0;
   const avgLoadingPercent = transformer.powerKva > 0 ? (avgKvaMeasured / transformer.powerKva) * 100 : 0;
 
+  // Carregamento de pico de fase (enrolamento mais solicitado):
+  const maxPhaseLoadingPercent = Math.max(
+    ...validMeas.map((m) => m.maxPhaseLoadingPercent || 0),
+    maxLoadingPercent
+  );
+
+  // Identificação da fase crítica:
+  const criticalPhase: 'A' | 'B' | 'C' | 'EQUILIBRADO' = validMeas.length > 0 && validMeas[0].criticalPhase
+    ? validMeas[0].criticalPhase
+    : 'EQUILIBRADO';
+
+  const loadingPercentA = nominalCurrentSecondaryA > 0 ? (avgIa / nominalCurrentSecondaryA) * 100 : 0;
+  const loadingPercentB = nominalCurrentSecondaryA > 0 ? (avgIb / nominalCurrentSecondaryA) * 100 : 0;
+  const loadingPercentC = isTri && nominalCurrentSecondaryA > 0 ? (avgIc / nominalCurrentSecondaryA) * 100 : 0;
+
+  // A condição de carregamento é ditada pela fase mais carregada (NBR 5356-7 / NDU 006):
+  const peakEvaluationLoading = Math.max(maxPhaseLoadingPercent, maxLoadingPercent);
   let loadingCondition: 'SUB-CARREGADO' | 'IDEAL' | 'ELEVADO' | 'SOBRECARGA_MODERADA' | 'SOBRECARGA_CRITICA' = 'IDEAL';
-  if (maxLoadingPercent < 45) loadingCondition = 'SUB-CARREGADO';
-  else if (maxLoadingPercent <= 85) loadingCondition = 'IDEAL';
-  else if (maxLoadingPercent <= 100) loadingCondition = 'ELEVADO';
-  else if (maxLoadingPercent <= 120) loadingCondition = 'SOBRECARGA_MODERADA';
+  if (peakEvaluationLoading < 45) loadingCondition = 'SUB-CARREGADO';
+  else if (peakEvaluationLoading <= 85) loadingCondition = 'IDEAL';
+  else if (peakEvaluationLoading <= 100) loadingCondition = 'ELEVADO';
+  else if (peakEvaluationLoading <= 120) loadingCondition = 'SOBRECARGA_MODERADA';
   else loadingCondition = 'SOBRECARGA_CRITICA';
 
   // Desbalanço
@@ -644,10 +710,13 @@ export function performFullDiagnosticAnalysis(
   // Fator de correção de temperatura para perdas em carga: Kt = (Tk + T_op) / (Tk + 75°C)
   const thermalCorrectionFactorKt = (thermalConstantTk + opTempC) / (thermalConstantTk + 75);
 
-  // Perdas calculadas
+  // Perdas calculadas considerando a média quadrática das correntes de fase (Joule I²R):
   const estimatedIronLossW = transformer.noLoadLossW;
-  const currentRatio = nominalCurrentSecondaryA > 0 ? overallAvgCurrentA / nominalCurrentSecondaryA : 0;
-  const estimatedCopperLossW = transformer.loadLoss75cW * Math.pow(currentRatio, 2) * thermalCorrectionFactorKt;
+  const currentRatioSquared = isTri
+    ? (Math.pow(avgIa, 2) + Math.pow(avgIb, 2) + Math.pow(avgIc, 2)) / (3 * Math.pow(nominalCurrentSecondaryA || 1, 2))
+    : (Math.pow(avgIa, 2) + Math.pow(avgIb, 2)) / (2 * Math.pow(nominalCurrentSecondaryA || 1, 2));
+
+  const estimatedCopperLossW = transformer.loadLoss75cW * currentRatioSquared * thermalCorrectionFactorKt;
   const totalCalculatedLossW = estimatedIronLossW + estimatedCopperLossW;
 
   const pf = validMeas.length > 0 ? validMeas[0].powerFactor || 0.92 : 0.92;
@@ -781,6 +850,11 @@ export function performFullDiagnosticAnalysis(
     avgKvaMeasured: Math.round(avgKvaMeasured * 100) / 100,
     maxLoadingPercent: Math.round(maxLoadingPercent * 10) / 10,
     avgLoadingPercent: Math.round(avgLoadingPercent * 10) / 10,
+    maxPhaseLoadingPercent: Math.round(maxPhaseLoadingPercent * 10) / 10,
+    criticalPhase,
+    loadingPercentA: Math.round(loadingPercentA * 10) / 10,
+    loadingPercentB: Math.round(loadingPercentB * 10) / 10,
+    loadingPercentC: Math.round(loadingPercentC * 10) / 10,
     loadingCondition,
     phaseTypeEvaluated: phaseType,
     voltageUnbalancePercentNema: Math.round(voltageUnbalancePercentNema * 100) / 100,
