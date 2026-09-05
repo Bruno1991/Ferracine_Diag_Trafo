@@ -44,27 +44,42 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
 }) => {
   const isTri = selectedTransformer.phaseType === 'TRIFASICO';
 
-  // Verifica se já existem dados pré-existentes na 1ª Medição (ex: draft restaurado)
+  // Verifica se já existem dados pré-existentes nas medições (ex: draft restaurado)
   const hasM1Data = Boolean(
     measurements[0]?.isRecorded ||
     (measurements[0]?.van || 0) > 0 ||
     (measurements[0]?.vab || 0) > 0 ||
     (measurements[0]?.ia || 0) > 0
   );
+  const hasM2Data = Boolean(
+    measurements[1]?.isRecorded ||
+    (measurements[1]?.van || 0) > 0 ||
+    (measurements[1]?.vab || 0) > 0 ||
+    (measurements[1]?.ia || 0) > 0
+  );
+  const hasM3Data = Boolean(
+    measurements[2]?.isRecorded ||
+    (measurements[2]?.van || 0) > 0 ||
+    (measurements[2]?.vab || 0) > 0 ||
+    (measurements[2]?.ia || 0) > 0
+  );
 
-  // Estados de liberação de cada medição (M1, M2, M3)
-  const [unlocked, setUnlocked] = useState<boolean[]>([hasM1Data, false, false]);
+  // Estados de liberação de cada medição (M1, M2, M3) — células ficam 100% ocultas se false
+  const [unlocked, setUnlocked] = useState<boolean[]>([hasM1Data, hasM2Data, hasM3Data]);
 
-  // Se receber dados existentes posteriormente, desbloqueia a medição 1
+  // Se receber dados existentes posteriormente (ex: restauração de draft assíncrona), desbloqueia
   useEffect(() => {
-    if (hasM1Data && !unlocked[0]) {
-      setUnlocked((prev) => [true, prev[1], prev[2]]);
-    }
-  }, [hasM1Data]);
+    setUnlocked((prev) => [
+      prev[0] || hasM1Data,
+      prev[1] || hasM2Data,
+      prev[2] || hasM3Data
+    ]);
+  }, [hasM1Data, hasM2Data, hasM3Data]);
 
   // Cronômetro Central
   // countdownTarget: 0 para M1 (pós-fechamento), 1 para M2, 2 para M3, ou null se nenhum ativo
-  const [countdownTarget, setCountdownTarget] = useState<number | null>(hasM1Data ? null : 0);
+  const initialTarget = !hasM1Data ? 0 : (measurements.length >= 2 && !hasM2Data) ? 1 : (measurements.length === 3 && !hasM3Data) ? 2 : null;
+  const [countdownTarget, setCountdownTarget] = useState<number | null>(initialTarget);
   const [timerSeconds, setTimerSeconds] = useState<number>(() => getCycleDurationSeconds(cycleMode));
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
 
@@ -267,7 +282,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     onChangeMeasurement(measIndex, processed);
   };
 
-  // Rótulo do ciclo
+  // Rótulo do ciclo por extenso
   const cycleLabel = cycleMode === '1s'
     ? '1 SEGUNDO'
     : cycleMode === '5s'
@@ -275,6 +290,8 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     : cycleMode === '5m'
     ? '5 MINUTOS'
     : '10 MINUTOS';
+
+  const visibleCount = measurements.filter((_, idx) => unlocked[idx]).length;
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded border border-slate-300 dark:border-slate-800 p-4 shadow-xs space-y-4">
@@ -294,7 +311,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões e correntes — a 1ª medição ocorre pós-fechamento do trafo. 1 medição é validada como medição instantânea.
+              Coleta de tensões e correntes — a 1ª medição ocorre pós-fechamento do transformador. 1 medição é validada como medição instantânea.
             </p>
           </div>
         </div>
@@ -378,7 +395,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                <span>5 MIN</span>
+                <span>5 MINUTOS</span>
                 <span className="text-[9px] font-normal opacity-80">(Intermediário)</span>
               </button>
 
@@ -391,7 +408,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                <span>10 MIN</span>
+                <span>10 MINUTOS</span>
                 <span className="text-[9px] font-normal opacity-80">(Recomendado)</span>
               </button>
             </div>
@@ -420,14 +437,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                 {isTimerRunning ? (
                   <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block"></span>
-                    Aguardando contagem para liberar os campos de coleta...
+                    Aguardando contagem regressiva para liberar a célula...
                   </span>
                 ) : countdownTarget !== null ? (
-                  <span>Clique em "INICIAR CONTADOR" para disparar a contagem regressiva.</span>
+                  <span>Clique em "INICIAR CONTADOR" para disparar a contagem e liberar a célula.</span>
                 ) : (
                   <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Medição liberada para inserção de dados coletados.
+                    Célula liberada para inserção de dados coletados.
                   </span>
                 )}
               </div>
@@ -459,7 +476,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             <button
               type="button"
               onClick={handleBypassUnlockNow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
               title="Liberar imediatamente sem aguardar o contador"
             >
               <Unlock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
@@ -469,244 +486,278 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
         </div>
       </div>
 
-      {/* CARDS DE MEDIÇÃO: LADO A LADO RESPONSIVO */}
-      <div className={`grid grid-cols-1 ${measurements.length === 2 ? 'md:grid-cols-2' : measurements.length >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'} gap-3`}>
-        {measurements.map((meas, idx) => {
-          const isUnlocked = unlocked[idx];
-          const measNum = idx + 1;
-
-          // Rótulo da medição
-          const offsetStr = idx === 0
-            ? `${cycleMode === '1s' ? '1 s' : cycleMode === '5s' ? '5 s' : cycleMode === '5m' ? '5 min' : '10 min'} pós-fechamento`
-            : idx === 1
-            ? `${cycleMode === '1s' ? '2 s' : cycleMode === '5s' ? '10 s' : cycleMode === '5m' ? '10 min' : '20 min'}`
-            : `${cycleMode === '1s' ? '3 s' : cycleMode === '5s' ? '15 s' : cycleMode === '5m' ? '15 min' : '30 min'}`;
-
-          return (
-            <div
-              key={meas.id}
-              className={`rounded border p-3 relative flex flex-col justify-between shadow-xs transition-all ${
-                !isUnlocked
-                  ? 'bg-slate-100/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-800'
-                  : 'bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'
-              }`}
+      {/* SE NENHUMA CÉLULA ESTIVER LIBERADA AINDA (OCULTA ATÉ TÉRMINO DO CONTADOR) */}
+      {!unlocked[0] && (
+        <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center space-y-3">
+          <div className="p-3 bg-blue-50 dark:bg-blue-950/60 rounded-full border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400">
+            <Clock className="w-8 h-8 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">
+              CÉLULAS DE MEDIÇÃO OCULTAS (AGUARDANDO TÉRMINO DO CONTADOR)
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md font-mono">
+              A 1ª Célula de Medição está oculta e será exibida automaticamente após a conclusão do contador regressivo ({cycleLabel}), pós-fechamento do transformador.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 pt-1 flex-wrap justify-center">
+            {!isTimerRunning ? (
+              <button
+                type="button"
+                onClick={handleStartTimer}
+                className="flex items-center gap-1.5 px-4 py-2 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
+              >
+                <Play className="w-4 h-4" />
+                <span>INICIAR CONTADOR AGORA</span>
+              </button>
+            ) : (
+              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping inline-block"></span>
+                Contagem em andamento... A célula surgirá ao zerar o tempo.
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleBypassUnlockNow}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
             >
-              <div>
-                {/* Header do Card */}
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono ${
-                      !isUnlocked ? 'bg-slate-400 text-white' : 'bg-blue-600 text-white'
-                    }`}>
-                      {measNum}
-                    </span>
-                    <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                      {measNum}ª Medição (T = {offsetStr})
-                    </h3>
+              <Unlock className="w-3.5 h-3.5 text-blue-600" />
+              <span>LIBERAR AGORA SEM AGUARDAR</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CARDS DE MEDIÇÃO: EXIBE SOMENTE AS CÉLULAS LIBERADAS */}
+      {unlocked[0] && (
+        <div className={`grid grid-cols-1 ${visibleCount === 2 ? 'md:grid-cols-2' : visibleCount >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'} gap-3`}>
+          {measurements.map((meas, idx) => {
+            // Células bloqueadas permanecem 100% ocultas até o término do contador
+            if (!unlocked[idx]) return null;
+            const measNum = idx + 1;
+
+            // Rótulo da medição sem abreviações
+            const offsetStr = idx === 0
+              ? `${cycleMode === '1s' ? '1 segundo' : cycleMode === '5s' ? '5 segundos' : cycleMode === '5m' ? '5 minutos' : '10 minutos'} pós-fechamento`
+              : idx === 1
+              ? `${cycleMode === '1s' ? '2 segundos' : cycleMode === '5s' ? '10 segundos' : cycleMode === '5m' ? '10 minutos' : '20 minutos'}`
+              : `${cycleMode === '1s' ? '3 segundos' : cycleMode === '5s' ? '15 segundos' : cycleMode === '5m' ? '15 minutos' : '30 minutos'}`;
+
+            return (
+              <div
+                key={meas.id}
+                className="rounded border p-3.5 relative flex flex-col justify-between shadow-xs bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700"
+              >
+                <div>
+                  {/* Header do Card */}
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono bg-blue-600 text-white">
+                        {measNum}
+                      </span>
+                      <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
+                        {measNum}ª Medição ({offsetStr})
+                      </h3>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* Botão APAGAR DADOS DA CÉLULA */}
+                      <button
+                        type="button"
+                        onClick={() => handleClearCellData(idx)}
+                        title={`Apagar todos os dados da ${measNum}ª Medição`}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>APAGAR DADOS DA CÉLULA</span>
+                      </button>
+
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                        <Unlock className="w-3 h-3" /> LIBERADA
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    {/* Botão APAGAR DADOS DA CÉLULA */}
-                    <button
-                      type="button"
-                      onClick={() => handleClearCellData(idx)}
-                      title={`Apagar todos os dados da ${measNum}ª Medição`}
-                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 transition cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>APAGAR DADOS DA CÉLULA</span>
-                    </button>
+                  {/* Inputs Tensões Fase-Neutro */}
+                  <div className="mb-2.5">
+                    <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
+                      TENSÕES FASE-NEUTRO [V]
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
+                        <input
+                          type="number"
+                          value={meas.van || ''}
+                          onChange={(e) => handleValueChange(idx, 'van', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
+                        <input
+                          type="number"
+                          value={meas.vbn || ''}
+                          onChange={(e) => handleValueChange(idx, 'vbn', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      {isTri && (
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
+                          <input
+                            type="number"
+                            value={meas.vcn || ''}
+                            onChange={(e) => handleValueChange(idx, 'vcn', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                    {!isUnlocked ? (
-                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                        <Lock className="w-3 h-3" /> AGUARDANDO
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                        <Unlock className="w-3 h-3" /> LIBERADO
-                      </span>
-                    )}
+                  {/* Inputs Tensões Fase-Fase */}
+                  <div className="mb-2.5">
+                    <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
+                      TENSÕES FASE-FASE [V]
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
+                        <input
+                          type="number"
+                          value={meas.vab || ''}
+                          onChange={(e) => handleValueChange(idx, 'vab', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      {isTri && (
+                        <>
+                          <div>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
+                            <input
+                              type="number"
+                              value={meas.vbc || ''}
+                              onChange={(e) => handleValueChange(idx, 'vbc', e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
+                            <input
+                              type="number"
+                              value={meas.vca || ''}
+                              onChange={(e) => handleValueChange(idx, 'vca', e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                              placeholder="0"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Inputs Correntes */}
+                  <div className="mb-2.5">
+                    <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
+                      CORRENTES DE LINHA [A]
+                    </label>
+                    <div className={`grid ${isTri ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
+                        <input
+                          type="number"
+                          value={meas.ia || ''}
+                          onChange={(e) => handleValueChange(idx, 'ia', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
+                        <input
+                          type="number"
+                          value={meas.ib || ''}
+                          onChange={(e) => handleValueChange(idx, 'ib', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      {isTri && (
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
+                          <input
+                            type="number"
+                            value={meas.ic || ''}
+                            onChange={(e) => handleValueChange(idx, 'ic', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
+                        <input
+                          type="number"
+                          value={meas.in || ''}
+                          onChange={(e) => handleValueChange(idx, 'in', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Se Bloqueado, exibe aviso aguardando cronômetro */}
-                {!isUnlocked ? (
-                  <div className="py-8 text-center flex flex-col items-center justify-center space-y-2 bg-slate-100/60 dark:bg-slate-900/60 rounded border border-dashed border-slate-300 dark:border-slate-800 my-2">
-                    <Lock className="w-7 h-7 text-slate-400 dark:text-slate-500" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono">
-                      CAMPOS BLOQUEADOS
-                    </span>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs font-mono px-2">
-                      Inicie ou aguarde a conclusão do contador temporizado no painel acima para liberar a inserção dos dados coletados desta medição.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Inputs Tensões Fase-Neutro */}
-                    <div className="mb-2.5">
-                      <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                        TENSÕES FASE-NEUTRO [V]
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
-                          <input
-                            type="number"
-                            value={meas.van || ''}
-                            onChange={(e) => handleValueChange(idx, 'van', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
-                          <input
-                            type="number"
-                            value={meas.vbn || ''}
-                            onChange={(e) => handleValueChange(idx, 'vbn', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        {isTri && (
-                          <div>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
-                            <input
-                              type="number"
-                              value={meas.vcn || ''}
-                              onChange={(e) => handleValueChange(idx, 'vcn', e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                              placeholder="0"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Inputs Tensões Fase-Fase */}
-                    <div className="mb-2.5">
-                      <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                        TENSÕES FASE-FASE [V]
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
-                          <input
-                            type="number"
-                            value={meas.vab || ''}
-                            onChange={(e) => handleValueChange(idx, 'vab', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        {isTri && (
-                          <>
-                            <div>
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
-                              <input
-                                type="number"
-                                value={meas.vbc || ''}
-                                onChange={(e) => handleValueChange(idx, 'vbc', e.target.value)}
-                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                                placeholder="0"
-                              />
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
-                              <input
-                                type="number"
-                                value={meas.vca || ''}
-                                onChange={(e) => handleValueChange(idx, 'vca', e.target.value)}
-                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                                placeholder="0"
-                              />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Inputs Correntes */}
-                    <div className="mb-2.5">
-                      <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400">
-                        CORRENTES DE LINHA [A]
-                      </label>
-                      <div className={`grid ${isTri ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
-                          <input
-                            type="number"
-                            value={meas.ia || ''}
-                            onChange={(e) => handleValueChange(idx, 'ia', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
-                          <input
-                            type="number"
-                            value={meas.ib || ''}
-                            onChange={(e) => handleValueChange(idx, 'ib', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        {isTri && (
-                          <div>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
-                            <input
-                              type="number"
-                              value={meas.ic || ''}
-                              onChange={(e) => handleValueChange(idx, 'ic', e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                              placeholder="0"
-                            />
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
-                          <input
-                            type="number"
-                            value={meas.in || ''}
-                            onChange={(e) => handleValueChange(idx, 'in', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Rodapé do Card com Métricas Instantâneas daquela Medição */}
-              {isUnlocked && (
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-1.5 text-[10px] font-mono text-slate-600 dark:text-slate-400">
+                {/* Rodapé do Card com Métricas Instantâneas daquela Medição Sem Abreviações */}
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-400">
                   <div>
-                    <span>Média F-F: </span>
-                    <strong className="text-slate-800 dark:text-slate-200">{meas.avgVoltagePhasePhase} V</strong>
+                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Tensão Média Fase-Fase</span>
+                    <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgVoltagePhasePhase} V</strong>
                   </div>
                   <div>
-                    <span>Carreg.: </span>
-                    <strong className={meas.loadingPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-200'}>
+                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Carregamento</span>
+                    <strong className={`text-xs ${meas.loadingPercent > 100 ? 'text-red-600 dark:text-red-400 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
                       {meas.loadingPercent}%
                     </strong>
                   </div>
                   <div>
-                    <span>I Média: </span>
-                    <strong className="text-slate-800 dark:text-slate-200">{meas.avgCurrent} A</strong>
+                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Corrente Média</span>
+                    <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgCurrent} A</strong>
                   </div>
                   <div>
-                    <span>Potência: </span>
-                    <strong className="text-slate-800 dark:text-slate-200">{meas.totalKva} kVA</strong>
+                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Potência Aparente Total</span>
+                    <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.totalKva} kVA</strong>
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Aviso quando há medições pendentes para a campanha */}
+      {unlocked[0] && measurements.length > visibleCount && (
+        <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded border border-blue-200 dark:border-blue-800 text-xs font-mono text-blue-800 dark:text-blue-300 flex items-center justify-between gap-2 flex-wrap">
+          <span>
+            {measurements.length - visibleCount === 1
+              ? `A ${visibleCount + 1}ª Medição está oculta e surgirá automaticamente assim que o próximo ciclo do contador terminar.`
+              : `Restam ${measurements.length - visibleCount} medições ocultas que surgirão sequencialmente conforme os ciclos temporizados terminarem.`}
+          </span>
+          <button
+            type="button"
+            onClick={handleBypassUnlockNow}
+            className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] transition cursor-pointer"
+          >
+            LIBERAR PRÓXIMA AGORA
+          </button>
+        </div>
+      )}
     </div>
   );
 };

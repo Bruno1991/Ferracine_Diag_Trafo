@@ -92,7 +92,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
         {initialData && onChangeInitialData && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pb-2.5 border-b border-slate-200 dark:border-slate-700/80">
             <div>
-              <label className="label-xs mb-1 block">TAG / N° TRANSFORMADOR</label>
+              <label className="label-xs mb-1 block">TAG / NÚMERO DO TRANSFORMADOR</label>
               <input
                 type="text"
                 value={initialData.transformerTag || ''}
@@ -169,7 +169,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
 
           {/* Tensão Secundária F-F */}
           <div>
-            <label className="label-xs mb-1 block">TENSÃO SEC. F-F (V)</label>
+            <label className="label-xs mb-1 block">TENSÃO SECUNDÁRIA FASE-FASE (V)</label>
             <input
               type="number"
               value={secondaryVoltageV}
@@ -184,7 +184,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
 
           {/* Tensão Secundária F-N */}
           <div>
-            <label className="label-xs mb-1 block">TENSÃO SEC. F-N (V)</label>
+            <label className="label-xs mb-1 block">TENSÃO SECUNDÁRIA FASE-NEUTRO (V)</label>
             <input
               type="number"
               value={secondaryNeutralV}

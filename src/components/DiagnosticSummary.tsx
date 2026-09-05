@@ -49,7 +49,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
               4. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Cálculos e parametrização extraídos exclusivamente das normas PRODIST Mód 8, NDUs/ETUs e NBR 5440
+              Cálculos e parametrização extraídos exclusivamente das normas PRODIST Módulo 8, NDUs/ETUs e NBR 5440
             </p>
           </div>
         </div>
@@ -69,13 +69,13 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             <span>
               Qualidade dos dados: {analysis.dataQuality.status} — {
                 analysis.cycleMode === '1s'
-                  ? 'ciclo 1 s (modo de teste)'
+                  ? 'ciclo 1 segundo (modo de teste)'
                   : analysis.cycleMode === '5s'
-                  ? 'ciclo 5 s (modo de teste)'
+                  ? 'ciclo 5 segundos (modo de teste)'
                   : analysis.cycleMode === '5m'
                   ? 'ciclo 5 minutos'
                   : analysis.dataQuality.isInstantaneous
-                    ? 'Medição Instantânea (10 min pós-fechamento)'
+                    ? 'Medição Instantânea (10 minutos pós-fechamento)'
                     : 'ciclo 10 minutos (operação de fato)'
               }
             </span>
@@ -83,10 +83,13 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
           {analysis.dataQuality.issues.length === 0 ? (
             <p className="text-[11px] font-mono">Nenhuma inconsistência detectada nas medições informadas.</p>
           ) : (
-            <div className="space-y-1">
-              {analysis.dataQuality.issues.map((issue, index) => (
-                <p key={`${issue.code}-${issue.measurementId || 0}-${index}`} className="text-[11px] font-mono">
-                  <strong>{issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA'} — {issue.title}:</strong> {issue.message}
+            <div className="space-y-1.5 pt-1">
+              {analysis.dataQuality.issues.map((issue) => (
+                <p key={issue.code} className="text-[11px] font-mono leading-tight">
+                  <span className={`font-bold mr-1 ${issue.severity === 'CRITICAL' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                    [{issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA'}]
+                  </span>
+                  <strong>{issue.title}:</strong> {issue.message}
                 </p>
               ))}
             </div>
@@ -125,7 +128,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
 
       {/* Main Status Badges Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Status 1: Tensão PRODIST Mód 8 */}
+        {/* Status 1: Tensão PRODIST Módulo 8 */}
         <div className={`p-3 rounded-lg border flex flex-col justify-between ${
           isAmedir
             ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
@@ -137,7 +140,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         }`}>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-slate-600 dark:text-slate-400">
-              PRODIST MÓD. 8 (ANEEL)
+              PRODIST MÓDULO 8 (ANEEL)
             </div>
             <div className={`text-lg font-extrabold font-mono flex items-center gap-1.5 ${
               isAmedir ? 'text-slate-600 dark:text-slate-400' : isAdequate ? 'text-emerald-700 dark:text-emerald-300' : isPrecarious ? 'text-amber-700 dark:text-amber-300' : 'text-rose-700 dark:text-rose-300'
@@ -150,7 +153,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </div>
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
-            Tensão Méd. Medida: <span className="font-bold text-slate-900 dark:text-slate-100">{isAmedir ? '—' : `${analysis.overallAvgPhasePhaseV}V`}</span> (Nominal: {transformer.secondaryVoltageV}V)
+            Tensão Média Medida: <span className="font-bold text-slate-900 dark:text-slate-100">{isAmedir ? '—' : `${analysis.overallAvgPhasePhaseV}V`}</span> (Nominal: {transformer.secondaryVoltageV}V)
           </p>
         </div>
 
@@ -164,7 +167,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         }`}>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-slate-600 dark:text-slate-400">
-              STATUS DE TENSÃO PRODIST (MÓD. 8)
+              STATUS DE TENSÃO PRODIST (MÓDULO 8)
             </div>
             <div className={`text-sm font-extrabold font-mono flex items-center gap-1.5 ${
               isAmedir
@@ -217,7 +220,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         }`}>
           <div>
             <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
-              CARREGAMENTO {analysis.criticalPhase ? `(PICO FASE ${analysis.criticalPhase})` : 'MÁXIMO (% Inom)'}
+              CARREGAMENTO {analysis.criticalPhase ? `(PICO NA FASE ${analysis.criticalPhase})` : 'MÁXIMO (% DA CORRENTE NOMINAL)'}
             </div>
             <div className={`text-lg font-extrabold font-mono ${
               analysis.loadingCondition.includes('SOBRECARGA')
@@ -228,7 +231,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             }`}>
               {analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}%{' '}
               <span className="text-[11px] text-slate-600 dark:text-slate-400 font-normal">
-                ({analysis.maxKvaMeasured} kVA | Inom: {analysis.nominalCurrentSecondaryA}A)
+                ({analysis.maxKvaMeasured} kVA | Corrente Nominal: {analysis.nominalCurrentSecondaryA} A)
               </span>
             </div>
           </div>

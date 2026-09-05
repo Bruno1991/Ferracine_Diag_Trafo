@@ -13,8 +13,8 @@ interface HexagonalDiagramProps {
 export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
   measurements,
   selectedTransformer,
-  width = 880,
-  height = 540,
+  width = 1100,
+  height = 680,
   theme = 'light',
   onCanvasRendered
 }) => {
@@ -53,17 +53,17 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     const isTri = selectedTransformer?.phaseType === 'TRIFASICO';
     const isDark = theme === 'dark';
 
-    // Set pixel ratio for sharp rendering
-    const dpr = window.devicePixelRatio || 1;
+    // Multiplicador de super-resolução (garante ultra-nitidez 300 DPI na tela e no PDF exportado)
+    const dpr = Math.max(window.devicePixelRatio || 1, 2.5);
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
 
     const centerX = width / 2;
-    const centerY = height / 2 - 24;
-    const radius = Math.min(width, height) / 2 - 68;
+    const centerY = (height - 68) / 2 + 16;
+    const radius = Math.min(width, height - 80) / 2 - 36;
 
-    // Configuração Visual: Fundo SEMPRE branco e linhas cinzas mais escuras para contraste nítido
+    // Configuração Visual de Alta Definição: Fundo Sempre Branco para Laudo Técnico
     const bgFill = '#ffffff';
     const titleText = '#0f172a';
     const gridAxes = '#475569';
@@ -72,27 +72,27 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     const intermediateAxes = '#94a3b8';
     const legendBg = '#f8fafc';
     const legendBorder = '#cbd5e1';
-    const legendSubText = '#334155';
+    const legendSubText = '#1e293b';
 
-    // Background (Sempre Branco)
+    // Fundo
     ctx.fillStyle = bgFill;
     ctx.fillRect(0, 0, width, height);
 
-    // Title
+    // Título Principal Nítido
     ctx.fillStyle = titleText;
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(
       isTri
         ? 'DIAGRAMA FASORIAL HEXAGONAL — MEDIÇÕES FASE-FASE, FASE-NEUTRO E CORRENTES'
         : 'DIAGRAMA FASORIAL MONOFÁSICO — MEDIÇÕES FASE E NEUTRO',
       centerX,
-      24
+      28
     );
 
-    // Draw Hexagonal Grid Matrix (6 axes spaced 60 deg)
+    // Matriz Hexagonal de Eixos (6 eixos espaçados a 60°)
     ctx.strokeStyle = gridAxes;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.4;
 
     for (let i = 0; i < 6; i++) {
       const angle = (i * Math.PI) / 3;
@@ -102,9 +102,9 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       ctx.stroke();
     }
 
-    // Intermediate 30° dashed axes for phase-phase alignment
+    // Eixos Intermediários a 30° tracejados (alinhamento fasorial fase-fase)
     ctx.strokeStyle = intermediateAxes;
-    ctx.setLineDash([2, 4]);
+    ctx.setLineDash([3, 5]);
     for (let i = 0; i < 6; i++) {
       const angle = (i * Math.PI) / 3 + Math.PI / 6;
       ctx.beginPath();
@@ -114,7 +114,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     }
     ctx.setLineDash([]);
 
-    // Concentric Hexagons (33%, 66%, 100%)
+    // Hexágonos Concêntricos (33%, 66%, 100%)
     [0.33, 0.66, 1.0].forEach((scale) => {
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
@@ -126,8 +126,8 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       }
       ctx.closePath();
       ctx.strokeStyle = scale === 1.0 ? outerHexColor : innerHexColor;
-      ctx.lineWidth = scale === 1.0 ? 1.5 : 1;
-      ctx.setLineDash(scale === 1.0 ? [] : [3, 3]);
+      ctx.lineWidth = scale === 1.0 ? 1.8 : 1.2;
+      ctx.setLineDash(scale === 1.0 ? [] : [4, 4]);
       ctx.stroke();
       ctx.setLineDash([]);
     });
@@ -140,30 +140,30 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       (currentMeas.ia || 0) > 0;
 
     if (!hasData) {
-      ctx.fillStyle = isDark ? '#38bdf8' : '#0284c7';
-      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = isDark ? '#0284c7' : '#0369a1';
+      ctx.font = 'bold 15px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('AGUARDANDO REGISTRO DE MEDIÇÕES', centerX, centerY - 10);
-      ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
-      ctx.font = '11px sans-serif';
+      ctx.fillText('AGUARDANDO REGISTRO DE MEDIÇÕES', centerX, centerY - 12);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '13px sans-serif';
       ctx.fillText(
-        'Insira as medições de tensão (F-F / F-N) e corrente para plotagem do diagrama fasorial',
+        'Insira as medições de tensão e corrente nas células acima para renderizar o diagrama fasorial em alta resolução.',
         centerX,
-        centerY + 12
+        centerY + 14
       );
 
-      const legendY = height - 42;
+      const legendY = height - 56;
       ctx.fillStyle = legendBg;
-      ctx.fillRect(12, legendY, width - 24, 34);
+      ctx.fillRect(16, legendY, width - 32, 44);
       ctx.strokeStyle = legendBorder;
-      ctx.strokeRect(12, legendY, width - 24, 34);
-      ctx.font = '11px sans-serif';
+      ctx.strokeRect(16, legendY, width - 32, 44);
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillStyle = legendSubText;
+      ctx.fillStyle = '#475569';
       ctx.fillText(
-        'Nenhum vetor ativo no momento (Aguardando inserção de medições)',
+        'Nenhum vetor ativo no momento (Aguardando preenchimento das medições)',
         width / 2,
-        legendY + 21
+        legendY + 26
       );
 
       if (onCanvasRendered) {
@@ -172,7 +172,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       return;
     }
 
-    // Helper: Draw Vector with Arrowhead
+    // Helper: Desenhar Vetor com Ponta de Flecha e Rótulo Legível
     const drawVector = (
       name: string,
       val: number,
@@ -181,8 +181,8 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       color: string,
       isDashed: boolean = false,
       unit: string = 'V',
-      lineWidth: number = 2.5,
-      labelOffset: number = 18
+      lineWidth: number = 3.2,
+      labelOffset: number = 22
     ) => {
       if (!val || val <= 0) return;
       const rad = (angleDeg * Math.PI) / 180;
@@ -197,12 +197,12 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       ctx.lineTo(endX, endY);
       ctx.strokeStyle = color;
       ctx.lineWidth = lineWidth;
-      if (isDashed) ctx.setLineDash([4, 3]);
+      if (isDashed) ctx.setLineDash([5, 4]);
       ctx.stroke();
       if (isDashed) ctx.setLineDash([]);
 
-      // Arrowhead
-      const headLen = lineWidth > 2 ? 8 : 6;
+      // Ponta de Flecha Proporcional
+      const headLen = lineWidth > 2.8 ? 10 : 8;
       ctx.beginPath();
       ctx.moveTo(endX, endY);
       ctx.lineTo(
@@ -217,19 +217,22 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       ctx.fillStyle = color;
       ctx.fill();
 
-      // Label
-      ctx.fillStyle = color;
-      ctx.font = 'bold 10px sans-serif';
-      ctx.textAlign = 'center';
+      // Rótulo com Contorno Branco para Máxima Legibilidade Técnica
       const lx = centerX + (len + labelOffset) * Math.cos(rad);
-      const ly = centerY + (len + labelOffset) * Math.sin(rad) + 3;
+      const ly = centerY + (len + labelOffset) * Math.sin(rad) + 4;
       if (isFinite(lx) && isFinite(ly)) {
-        ctx.fillText(`${name}: ${Math.round(val)}${unit}`, lx, ly);
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.strokeText(`${name}: ${Math.round(val)} ${unit}`, lx, ly);
+        ctx.fillStyle = color;
+        ctx.fillText(`${name}: ${Math.round(val)} ${unit}`, lx, ly);
       }
     };
 
     if (!isTri) {
-      // MONOFÁSICO: Vetores Fase-Neutro (Van e Vbn/Neutro) + Correntes
+      // MONOFÁSICO: Vetores Fase-Neutro + Correntes
       const nomV =
         selectedTransformer?.secondaryNeutralV ||
         selectedTransformer?.secondaryVoltageV ||
@@ -243,51 +246,51 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
 
       // Van (Fase A - Neutro, 0°)
       if (vanVal > 0) {
-        drawVector('Van', vanVal, 0, scaleV, '#d97706', false, 'V', 3);
+        drawVector('Van', vanVal, 0, scaleV, '#d97706', false, 'V', 3.5);
       }
 
       // Vbn (Fase B / Retorno Neutro, 180°)
       if (vbnVal > 0) {
-        drawVector('Vbn', vbnVal, 180, scaleV, '#0284c7', false, 'V', 3);
+        drawVector('Vbn', vbnVal, 180, scaleV, '#0284c7', false, 'V', 3.5);
       }
 
       // Correntes
       const maxI = Math.max(iaVal, inVal, 10);
       const scaleI = (radius * 0.75) / maxI;
       if (iaVal > 0) {
-        drawVector('Ia', iaVal, 23, scaleI, '#ea580c', true, 'A', 2);
+        drawVector('Ia', iaVal, 23, scaleI, '#ea580c', true, 'A', 2.8);
       }
       if (inVal > 0) {
-        drawVector('In', inVal, 180 + 23, scaleI, '#8b5cf6', true, 'A', 2);
+        drawVector('In', inVal, 180 + 23, scaleI, '#8b5cf6', true, 'A', 2.8);
       }
 
-      // Bottom Legend Box
-      const legendY = height - 44;
+      // Painel de Legenda no Rodapé sem Abreviações
+      const legendY = height - 56;
       ctx.fillStyle = legendBg;
-      ctx.fillRect(12, legendY, width - 24, 36);
+      ctx.fillRect(16, legendY, width - 32, 46);
       ctx.strokeStyle = legendBorder;
-      ctx.strokeRect(12, legendY, width - 24, 36);
+      ctx.strokeRect(16, legendY, width - 32, 46);
 
-      ctx.font = '11px sans-serif';
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'left';
 
       ctx.fillStyle = '#d97706';
-      ctx.fillText(`■ Van (F-N): ${Math.round(vanVal)}V`, 24, legendY + 22);
+      ctx.fillText(`■ Van (Fase-Neutro): ${Math.round(vanVal)} V`, 28, legendY + 28);
       if (vbnVal > 0) {
         ctx.fillStyle = '#0284c7';
-        ctx.fillText(`■ Vbn (F-N): ${Math.round(vbnVal)}V`, 180, legendY + 22);
+        ctx.fillText(`■ Vbn (Fase-Neutro): ${Math.round(vbnVal)} V`, 240, legendY + 28);
       }
       if (vabVal > 0) {
         ctx.fillStyle = '#16a34a';
-        ctx.fillText(`■ Vab Total: ${Math.round(vabVal)}V`, 340, legendY + 22);
+        ctx.fillText(`■ Vab Total: ${Math.round(vabVal)} V`, 460, legendY + 28);
       }
       if (iaVal > 0) {
         ctx.fillStyle = '#ea580c';
-        ctx.fillText(`■ Ia: ${Math.round(iaVal)}A`, 490, legendY + 22);
+        ctx.fillText(`■ Ia: ${Math.round(iaVal)} A`, 660, legendY + 28);
       }
       if (inVal > 0) {
         ctx.fillStyle = '#8b5cf6';
-        ctx.fillText(`■ In (Neutro): ${Math.round(inVal)}A`, 600, legendY + 22);
+        ctx.fillText(`■ Corrente de Neutro (In): ${Math.round(inVal)} A`, 800, legendY + 28);
       }
 
       if (onCanvasRendered) {
@@ -303,12 +306,12 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     const maxV = nomVff * 1.25 || 275;
     const vScale = radius / maxV;
 
-    // Phase-to-Neutral Voltages (F-N)
+    // Tensões Fase-Neutro
     const vanVal = currentMeas.van || (currentMeas.vab ? currentMeas.vab / Math.sqrt(3) : 0);
     const vbnVal = currentMeas.vbn || (currentMeas.vbc ? currentMeas.vbc / Math.sqrt(3) : 0);
     const vcnVal = currentMeas.vcn || (currentMeas.vca ? currentMeas.vca / Math.sqrt(3) : 0);
 
-    // Phase-to-Phase Voltages (F-F)
+    // Tensões Fase-Fase
     const vabVal = currentMeas.vab || (vanVal ? vanVal * Math.sqrt(3) : 0);
     const vbcVal = currentMeas.vbc || (vbnVal ? vbnVal * Math.sqrt(3) : 0);
     const vcaVal = currentMeas.vca || (vcnVal ? vcnVal * Math.sqrt(3) : 0);
@@ -321,7 +324,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       { name: 'Vcn', val: vcnVal, angleDeg: 120, color: '#0284c7' }  // Azul Céu / Fase C
     ];
 
-    // Desenha Polígono Estrela de Fase-Neutro
+    // Polígono Estrela de Fase-Neutro
     const fnPoints: { x: number; y: number }[] = [];
     fnVectors.forEach((v) => {
       const rad = (v.angleDeg * Math.PI) / 180;
@@ -338,10 +341,10 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       ctx.lineTo(fnPoints[2].x, fnPoints[2].y);
       ctx.lineTo(fnPoints[1].x, fnPoints[1].y);
       ctx.closePath();
-      ctx.fillStyle = isDark ? 'rgba(217, 119, 6, 0.08)' : 'rgba(217, 119, 6, 0.06)';
+      ctx.fillStyle = 'rgba(217, 119, 6, 0.07)';
       ctx.fill();
-      ctx.strokeStyle = isDark ? 'rgba(217, 119, 6, 0.3)' : 'rgba(217, 119, 6, 0.4)';
-      ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = 'rgba(217, 119, 6, 0.4)';
+      ctx.setLineDash([3, 4]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -354,7 +357,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       { name: 'Vca', val: vcaVal, angleDeg: 150, color: '#2563eb' }  // Azul
     ];
 
-    // Desenha Polígono Delta de Fase-Fase
+    // Polígono Delta de Fase-Fase
     const ffPoints: { x: number; y: number }[] = [];
     ffVectors.forEach((v) => {
       const rad = (v.angleDeg * Math.PI) / 180;
@@ -371,22 +374,22 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       ctx.lineTo(ffPoints[2].x, ffPoints[2].y);
       ctx.lineTo(ffPoints[1].x, ffPoints[1].y);
       ctx.closePath();
-      ctx.fillStyle = isDark ? 'rgba(37, 99, 235, 0.08)' : 'rgba(37, 99, 235, 0.05)';
+      ctx.fillStyle = 'rgba(37, 99, 235, 0.06)';
       ctx.fill();
-      ctx.strokeStyle = isDark ? 'rgba(59, 130, 246, 0.35)' : 'rgba(37, 99, 235, 0.35)';
-      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.4)';
+      ctx.setLineDash([4, 4]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    // Plota Vetores Fase-Fase (Linha cheia destacada, 2.5px)
+    // Plota Vetores Fase-Fase (Linha cheia destacada, 3.2px)
     ffVectors.forEach((v) => {
-      drawVector(v.name, v.val, v.angleDeg, vScale, v.color, false, 'V', 2.5, 20);
+      drawVector(v.name, v.val, v.angleDeg, vScale, v.color, false, 'V', 3.2, 24);
     });
 
-    // Plota Vetores Fase-Neutro (Linha sólida com ponto, 2.5px)
+    // Plota Vetores Fase-Neutro (Linha sólida, 3.2px)
     fnVectors.forEach((v) => {
-      drawVector(v.name, v.val, v.angleDeg, vScale, v.color, false, 'V', 2.5, 20);
+      drawVector(v.name, v.val, v.angleDeg, vScale, v.color, false, 'V', 3.2, 24);
     });
 
     // 3) Vetores de Corrente (Ia, Ib, Ic e In)
@@ -417,52 +420,53 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     ];
 
     iVectors.forEach((iv) => {
-      drawVector(iv.name, iv.val, iv.angleDeg, iScale, iv.color, true, 'A', 2, 16);
+      drawVector(iv.name, iv.val, iv.angleDeg, iScale, iv.color, true, 'A', 2.8, 20);
     });
 
-    // Corrente no Neutro (In) se presente
+    // Corrente de Neutro (In) se presente
     const inVal = currentMeas.in || 0;
     if (inVal > 0) {
       const inAngleDeg = 180 - pfAngleDeg;
-      drawVector('In', inVal, inAngleDeg, iScale, '#a855f7', true, 'A', 2, 16);
+      drawVector('In', inVal, inAngleDeg, iScale, '#a855f7', true, 'A', 2.8, 20);
     }
 
     // ==============================================================
-    // Legenda Completa e Painel Analítico
+    // Legenda Completa e Painel Analítico sem Abreviações
     // ==============================================================
-    const legendY = height - 48;
+    const legendY = height - 58;
     ctx.fillStyle = legendBg;
-    ctx.fillRect(10, legendY, width - 20, 40);
+    ctx.fillRect(16, legendY, width - 32, 48);
     ctx.strokeStyle = legendBorder;
-    ctx.strokeRect(10, legendY, width - 20, 40);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(16, legendY, width - 32, 48);
 
-    ctx.font = '10px sans-serif';
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'left';
 
-    // Linha 1: Tensões Fase-Neutro (F-N) e Fase-Fase (F-F)
+    // Linha 1: Tensões Fase-Neutro e Fase-Fase
     ctx.fillStyle = '#d97706';
-    ctx.fillText(`Van: ${Math.round(vanVal)}V`, 18, legendY + 16);
+    ctx.fillText(`Van: ${Math.round(vanVal)} V`, 26, legendY + 18);
     ctx.fillStyle = '#059669';
-    ctx.fillText(`Vbn: ${Math.round(vbnVal)}V`, 95, legendY + 16);
+    ctx.fillText(`Vbn: ${Math.round(vbnVal)} V`, 135, legendY + 18);
     ctx.fillStyle = '#0284c7';
-    ctx.fillText(`Vcn: ${Math.round(vcnVal)}V`, 172, legendY + 16);
+    ctx.fillText(`Vcn: ${Math.round(vcnVal)} V`, 245, legendY + 18);
 
     ctx.fillStyle = '#dc2626';
-    ctx.fillText(`Vab: ${Math.round(vabVal)}V`, 260, legendY + 16);
+    ctx.fillText(`Vab: ${Math.round(vabVal)} V`, 380, legendY + 18);
     ctx.fillStyle = '#16a34a';
-    ctx.fillText(`Vbc: ${Math.round(vbcVal)}V`, 335, legendY + 16);
+    ctx.fillText(`Vbc: ${Math.round(vbcVal)} V`, 490, legendY + 18);
     ctx.fillStyle = '#2563eb';
-    ctx.fillText(`Vca: ${Math.round(vcaVal)}V`, 410, legendY + 16);
+    ctx.fillText(`Vca: ${Math.round(vcaVal)} V`, 600, legendY + 18);
 
-    // Linha 2: Correntes e Fator de Desbalanço
+    // Linha 2: Correntes e Índices Normativos por Extenso
     ctx.fillStyle = '#ea580c';
-    ctx.fillText(`Ia: ${Math.round(currentMeas.ia || 0)}A`, 18, legendY + 31);
+    ctx.fillText(`Ia: ${Math.round(currentMeas.ia || 0)} A`, 26, legendY + 36);
     ctx.fillStyle = '#84cc16';
-    ctx.fillText(`Ib: ${Math.round(currentMeas.ib || 0)}A`, 95, legendY + 31);
+    ctx.fillText(`Ib: ${Math.round(currentMeas.ib || 0)} A`, 135, legendY + 36);
     ctx.fillStyle = '#06b6d4';
-    ctx.fillText(`Ic: ${Math.round(currentMeas.ic || 0)}A`, 172, legendY + 31);
+    ctx.fillText(`Ic: ${Math.round(currentMeas.ic || 0)} A`, 245, legendY + 36);
     ctx.fillStyle = '#a855f7';
-    ctx.fillText(`In (Neutro): ${Math.round(inVal)}A`, 260, legendY + 31);
+    ctx.fillText(`Corrente Neutro (In): ${Math.round(inVal)} A`, 380, legendY + 36);
 
     ctx.fillStyle = legendSubText;
     const fdtpVal =
@@ -470,12 +474,12 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
         ? currentMeas.fdtpPercent
         : 0;
     ctx.fillText(
-      `FDTP: ${fdtpVal.toFixed(2)}% | FP: ${pf.toFixed(2)}`,
-      width - 200,
-      legendY + 24
+      `Fator de Desbalanço (FDTP): ${fdtpVal.toFixed(2)}% | Fator de Potência: ${pf.toFixed(2)}`,
+      width - 480,
+      legendY + 36
     );
 
-    // Notifica callback para exportação em PDF
+    // Notifica callback para exportação em alta definição no PDF
     if (onCanvasRendered) {
       onCanvasRendered(canvas.toDataURL('image/png'));
     }
@@ -489,8 +493,13 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     <div className="w-full flex flex-col items-center justify-center">
       <canvas
         ref={canvasRef}
-        style={{ width: `${width}px`, height: `${height}px` }}
-        className="rounded-lg border border-slate-300 shadow-sm bg-white max-w-full h-auto"
+        style={{
+          width: '100%',
+          maxWidth: `${width}px`,
+          height: 'auto',
+          aspectRatio: `${width}/${height}`
+        }}
+        className="rounded-lg border border-slate-300 dark:border-slate-700 shadow-md bg-white transition-shadow"
       />
     </div>
   );

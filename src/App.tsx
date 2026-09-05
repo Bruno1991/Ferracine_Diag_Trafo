@@ -129,8 +129,8 @@ export default function App() {
     if (measurements.length >= 3) return;
     const nextId = measurements.length + 1;
     const label = nextId === 2
-      ? `2ª Medição (T = ${cycleMode === '5s' ? '10 seg' : '20 min'})`
-      : `3ª Medição (T = ${cycleMode === '5s' ? '15 seg' : '30 min'})`;
+      ? `2ª Medição (Tempo = ${cycleMode === '1s' ? '2 segundos' : cycleMode === '5s' ? '10 segundos' : cycleMode === '5m' ? '10 minutos' : '20 minutos'})`
+      : `3ª Medição (Tempo = ${cycleMode === '1s' ? '3 segundos' : cycleMode === '5s' ? '15 segundos' : cycleMode === '5m' ? '15 minutos' : '30 minutos'})`;
 
     const newMeas: SingleMeasurement = processSingleMeasurement(
       {

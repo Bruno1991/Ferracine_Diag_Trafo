@@ -266,7 +266,7 @@ export async function generateTransformerDiagnosticPdf({
 
   // 1. Identificação (TAG / Marca)
   specRows.push({
-    left: `TAG / Nº Trafo: ${tag || 'Não informado'}`,
+    left: `TAG / Número do Transformador: ${tag || 'Não informado'}`,
     right: `Marca / Fabricante: ${brand || 'Não informado'}`
   });
 
@@ -285,14 +285,14 @@ export async function generateTransformerDiagnosticPdf({
     right: `Tensão Primária: ${primVStr}`
   });
 
-  // 4. Tensões Secundárias F-F e F-N
+  // 4. Tensões Secundárias Fase-Fase e Fase-Neutro
   const secFfStr = transformer.secondaryVoltageV > 0 ? `${transformer.secondaryVoltageV} V` : 'Não informada';
   const secFnStr = transformer.secondaryNeutralV && transformer.secondaryNeutralV > 0
     ? `${transformer.secondaryNeutralV} V`
     : 'Não informada';
   specRows.push({
-    left: `Tensão Secundária F-F: ${secFfStr}`,
-    right: `Tensão Secundária F-N: ${secFnStr}`
+    left: `Tensão Secundária Fase-Fase: ${secFfStr}`,
+    right: `Tensão Secundária Fase-Neutro: ${secFnStr}`
   });
 
   // 5. Padrão de Coleta
@@ -348,11 +348,11 @@ export async function generateTransformerDiagnosticPdf({
         analysis.prodist.unbalanceStatus
       ],
       [
-        'Carregamento Máximo (% Inom / kVA)',
+        'Carregamento Máximo (% Corrente Nominal / kVA)',
         analysis.criticalPhase
-          ? `Pico ${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase}) | Méd. ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`
-          : `Pico ${analysis.maxLoadingPercent}% | Méd. ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
-        `Inom = ${analysis.nominalCurrentSecondaryA} A | NDU 006 / NBR 5356-7`,
+          ? `Pico ${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase}) | Média ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`
+          : `Pico ${analysis.maxLoadingPercent}% | Média ${analysis.avgLoadingPercent}% (${analysis.maxKvaMeasured} kVA)`,
+        `Corrente Nominal = ${analysis.nominalCurrentSecondaryA} A | NDU 006 / NBR 5356-7`,
         analysis.loadingCondition.replace('_', ' ')
       ],
       [
@@ -479,7 +479,7 @@ export async function generateTransformerDiagnosticPdf({
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Etapa de Teste', 'Horário Log', 'Tensão F-N (A/B/C)', 'Tensão F-F (AB/BC/CA)', 'Corrente (Ia/Ib/Ic) e Neutro', 'Carreg.', '% Carga (Pico)', 'FDTP %']],
+    head: [['Etapa de Teste', 'Horário Log', 'Tensão Fase-Neutro (A/B/C)', 'Tensão Fase-Fase (AB/BC/CA)', 'Correntes (Ia/Ib/Ic) e Neutro', 'Carregamento', 'Carga (Pico)', 'FDTP %']],
     body: rowsMeas,
     theme: 'striped',
     headStyles: {
@@ -546,8 +546,8 @@ export async function generateTransformerDiagnosticPdf({
 
   const summaryLines = [
     `• RESUMO GERAL DO ESTADO DO TRANSFORMADOR:`,
-    `  Condição Operacional: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase || 'C'}` : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Inom: ${analysis.nominalCurrentSecondaryA} A).`,
-    `  Tensão e Qualidade PRODIST Mód. 8: Tensão média medida de ${analysis.overallAvgPhasePhaseV} V (Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
+    `  Condição Operacional: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase || 'C'}` : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`,
+    `  Tensão e Qualidade PRODIST Módulo 8: Tensão média medida de ${analysis.overallAvgPhasePhaseV} V (Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
     `  Eficiência sob Carga: ${analysis.calculatedEfficiencyPercent}% | Perdas Totais Calculadas: ${analysis.totalCalculatedLossW} W (Perdas no Ferro P0: ${analysis.estimatedIronLossW} W + Perdas no Cobre Pk: ${analysis.estimatedCopperLossW} W).`,
     `  TAP em Operação e Ajuste: ${analysis.recommendedTap}. ${analysis.tapAdjustmentAdvice}`,
     `  Proteção Primária Recomendada: ${analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Sem elo correspondente no banco'} (Norma NDU/ETU).`
@@ -608,18 +608,37 @@ export async function generateTransformerDiagnosticPdf({
 
   currentY += 6;
 
-  // Gráfico ampliado para ocupar a folha inteira
-  const hexImgW = 182;
-  const hexImgH = 225;
-  const hexX = (pageWidth - hexImgW) / 2;
-
+  // Gráfico fasorial com preservação rigorosa do aspect ratio (sem espremer lateralmente) e alta definição
   if (hexDataUrl) {
     try {
-      doc.addImage(hexDataUrl, 'PNG', hexX, currentY, hexImgW, hexImgH);
+      const imgProps = doc.getImageProperties(hexDataUrl);
+      const imgAspect = imgProps.width / imgProps.height;
+
+      const maxW = 182; // Largura útil máxima da folha A4 (210 - 2 * 14)
+      const maxH = 222; // Altura útil máxima disponível na página 3
+
+      let renderW = maxW;
+      let renderH = renderW / imgAspect;
+
+      if (renderH > maxH) {
+        renderH = maxH;
+        renderW = renderH * imgAspect;
+      }
+
+      const renderX = (pageWidth - renderW) / 2;
+      const renderY = currentY + (maxH - renderH) / 2;
+
+      doc.addImage(hexDataUrl, 'PNG', renderX, renderY, renderW, renderH);
+
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
+      doc.setFontSize(8.5);
       doc.setTextColor(100, 116, 139);
-      doc.text('Figura 1: Representação Fasorial Completa em Alta Resolução (PRODIST Módulo 8 / NDU 006)', pageWidth / 2, currentY + hexImgH + 5, { align: 'center' });
+      doc.text(
+        'Figura 1: Representação Fasorial Completa em Alta Resolução (PRODIST Módulo 8 / NDU 006)',
+        pageWidth / 2,
+        renderY + renderH + 6,
+        { align: 'center' }
+      );
     } catch (e) {
       console.warn('Erro ao inserir gráfico hexagonal no PDF:', e);
     }
@@ -747,12 +766,12 @@ export async function generateTransformerDiagnosticPdf({
   currentY += 4;
 
   const formulaRows = [
-    ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van*Ia + Vbn*Ib + Vcn*Ic ou S = sqrt(3)*Vmed*Imed / 1000'],
-    ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (Ifase / Inom) x 100; Limite térmico do trafo governado pelo pico'],
-    ['FDTP — fórmula exata PRODIST Mód. 8', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
-    ['Desbalanço de corrente (triagem BT)', '100 x máximo |Ifase - Imedia| / Imedia (Orientativo para balanceamento NDU 006/007)'],
-    ['Perdas no cobre sob carga', 'Pk(I) = Pk,75 x [(Ia^2 + Ib^2 + Ic^2) / (3 x Inom^2)] (Física das perdas Joule)'],
-    ['Rendimento estimado sob carga', 'eta = Pativa / (Pativa + P0 + Pk,calc) x 100']
+    ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van*Ia + Vbn*Ib + Vcn*Ic ou S = sqrt(3)*V_media*I_media / 1000'],
+    ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (I_fase / I_nominal) x 100; Limite térmico do transformador governado pelo pico'],
+    ['FDTP — fórmula exata PRODIST Módulo 8', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
+    ['Desbalanço de corrente (triagem BT)', '100 x máximo |I_fase - I_media| / I_media (Orientativo para balanceamento NDU 006/007)'],
+    ['Perdas no cobre sob carga', 'Pk(I) = Pk,75 x [(Ia^2 + Ib^2 + Ic^2) / (3 x I_nominal^2)] (Física das perdas Joule)'],
+    ['Rendimento estimado sob carga', 'eta = Pativa / (Pativa + P0 + Pk,calculada) x 100']
   ];
 
   autoTable(doc, {
