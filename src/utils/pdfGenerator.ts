@@ -86,7 +86,6 @@ export async function generateTransformerDiagnosticPdf({
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 14;
-  const totalPages = photos && photos.length > 0 ? 6 : 5;
 
   // Colors
   const primaryColor = [15, 23, 42]; // slate-900
@@ -156,18 +155,6 @@ export async function generateTransformerDiagnosticPdf({
 
     doc.setDrawColor(203, 213, 225); // slate-300 line
     doc.line(0, 24, pageWidth, 24);
-
-    // Footer Bar
-    doc.setFillColor(241, 245, 249);
-    doc.rect(0, pageHeight - 12, pageWidth, 12, 'F');
-
-    doc.setTextColor(100, 116, 139);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Grupo Energisa', margin, pageHeight - 5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(' — Laudo Pericial — Normas ANEEL PRODIST Mód 8 / NDU / ETU / NBR 5440', margin + 22, pageHeight - 5);
-    doc.text(`Página ${pageNum} de ${totalPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
   };
 
   // ==========================================
@@ -411,10 +398,10 @@ export async function generateTransformerDiagnosticPdf({
   });
 
   // ==========================================
-  // PAGE 2: TABELA DETALHADA DAS 3 MEDIÇÕES E PARECER
+  // PAGE 2: TABELA DETALHADA DAS MEDIÇÕES E PARECER
   // ==========================================
   doc.addPage();
-  drawHeader('PÁGINA 2: REGISTRO TEMPORIZADO DAS 3 MEDIÇÕES E RECOMENDAÇÕES', 2);
+  drawHeader('PÁGINA 2: REGISTRO TEMPORIZADO DAS MEDIÇÕES E RECOMENDAÇÕES', 2);
 
   currentY = 28;
 
@@ -630,10 +617,6 @@ export async function generateTransformerDiagnosticPdf({
   });
 
   // ==========================================
-  // PAGE 4: TRIAGEM TEMPORAL PRODIST
-  // ==========================================
-  doc.addPage();
-  drawHeader('PÁGINA 4: TRIAGEM TEMPORAL DE TENSÃO E CORRENTE — PRODIST', 4);
   // PAGE 4: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA
   // ==========================================
   doc.addPage();
@@ -694,7 +677,7 @@ export async function generateTransformerDiagnosticPdf({
 
   const dbInfo = [
     '• Energisa ETU-109.1 / ETU-109.2, Tabela 16, página 142: matriz separada para transformadores monofásicos e trifásicos.',
-    `• Combinação deste equipamento: ${transformer.phaseType}, ${(transformer.primaryVoltageV / 1000).toLocaleString('pt-BR')} kV, ${transformer.powerKva.toLocaleString('pt-BR')} kVA → ${analysis.recommendedFuse ? `elo ${analysis.recommendedFuse.fuseCode}` : 'sem correspondência exata no banco'}.`,
+    `• Combinação deste equipamento: ${transformer.phaseType}, ${(transformer.primaryVoltageV / 1000).toLocaleString('pt-BR')} kV, ${transformer.powerKva.toLocaleString('pt-BR')} kVA -> ${analysis.recommendedFuse ? `elo ${analysis.recommendedFuse.fuseCode}` : 'sem correspondência exata no banco'}.`,
     '• O código do elo (H ou K) é o valor oficial da célula; o app não cria alternativas H/K/T.',
     '• Eficiência operacional é uma estimativa de engenharia a partir de P0, Pk, carga, fator de potência e correção térmica.'
   ];
@@ -949,10 +932,28 @@ export async function generateTransformerDiagnosticPdf({
       doc.text(
         `Responsável: ${authorsFooterStr}`,
         pageWidth / 2,
-        pageHeight - 12,
+        pageHeight - 13,
         { align: 'center' }
       );
     });
+  }
+
+  // ==========================================
+  // FOOTER & GLOBAL DYNAMIC PAGE NUMBERING (ALL PAGES)
+  // ==========================================
+  const totalDocPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalDocPages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(241, 245, 249);
+    doc.rect(0, pageHeight - 12, pageWidth, 12, 'F');
+
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Grupo Energisa', margin, pageHeight - 5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(' — Laudo Pericial — Normas ANEEL PRODIST Mód 8 / NDU / ETU / NBR 5440', margin + 22, pageHeight - 5);
+    doc.text(`Página ${i} de ${totalDocPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
   }
 
   // Save / Download PDF
