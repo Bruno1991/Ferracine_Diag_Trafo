@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { MapPin, Navigation, User, Calendar, Building2, CheckCircle2, AlertCircle, Loader2, Award, Users, Plus, Trash2 } from 'lucide-react';
+import { MapPin, Navigation, User, Calendar, Building2, CheckCircle2, AlertCircle, Loader2, Award, Users, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { InitialDiagnosticData, ReportAuthor, AuthorRole } from '../types';
 import { getCurrentGpsPosition, latLonToUtm, utmToLatLon } from '../utils/geoUtm';
+import { reverseGeocodeCoords } from '../utils/reverseGeocoding';
 
 interface GpsLocationFormProps {
   initialData: InitialDiagnosticData;
@@ -16,6 +17,8 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
   const [isLoadingGps, setIsLoadingGps] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsSuccess, setGpsSuccess] = useState(false);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const geocodeTimeoutRef = React.useRef<any>(null);
 
   // Local state for Lat / Lon input strings to allow free typing
   const [latInput, setLatInput] = useState<string>(
@@ -66,6 +69,31 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
     }
   }, []);
 
+  const fetchCityStateForCoords = async (lat: number, lon: number) => {
+    if (isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0)) return;
+    setIsGeocoding(true);
+    try {
+      const geoResult = await reverseGeocodeCoords(lat, lon);
+      if (geoResult?.formatted) {
+        onChange({
+          ...initialData,
+          cityState: geoResult.formatted
+        });
+      }
+    } catch {
+      // Falha silenciosa
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const scheduleCityGeocode = (lat: number, lon: number) => {
+    if (geocodeTimeoutRef.current) clearTimeout(geocodeTimeoutRef.current);
+    geocodeTimeoutRef.current = setTimeout(() => {
+      fetchCityStateForCoords(lat, lon);
+    }, 700);
+  };
+
   const handleManualCoordUpdate = async (newLatStr: string, newLonStr: string) => {
     setLatInput(newLatStr);
     setLonInput(newLonStr);
@@ -83,6 +111,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
         ...initialData,
         utm: newUtm
       });
+      scheduleCityGeocode(latNum, lonNum);
     }
   };
 
@@ -110,6 +139,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
           longitude: convertedLatLon.longitude
         }
       });
+      scheduleCityGeocode(convertedLatLon.latitude, convertedLatLon.longitude);
     }
   };
 
@@ -135,6 +165,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
         dateTime: currentDateTime
       });
       setGpsSuccess(true);
+      fetchCityStateForCoords(utm.latitude, utm.longitude);
     } catch (err: any) {
       setGpsError(err.message || 'Erro ao capturar sinal de GPS.');
     } finally {
@@ -361,17 +392,37 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
 
         {/* Cidade / Estado */}
         <div>
-          <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-            <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>CIDADE / ESTADO</span>
-          </label>
-          <input
-            type="text"
-            value={initialData.cityState}
-            onChange={(e) => onChange({ ...initialData, cityState: e.target.value })}
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-            placeholder="Cidade - UF"
-          />
+          <div className="flex items-center justify-between mb-1 min-h-[18px]">
+            <label className="label-xs flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>CIDADE / ESTADO</span>
+            </label>
+            {isGeocoding && (
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1 font-medium">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Buscando...
+              </span>
+            )}
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              value={initialData.cityState}
+              onChange={(e) => onChange({ ...initialData, cityState: e.target.value })}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none pr-8"
+              placeholder="Cidade - UF"
+            />
+            {initialData.utm?.latitude ? (
+              <button
+                type="button"
+                onClick={() => fetchCityStateForCoords(initialData.utm!.latitude, initialData.utm!.longitude)}
+                title="Rebuscar Cidade e UF pelas coordenadas atuais"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isGeocoding ? 'animate-spin' : ''}`} />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Campo EQUIPE */}

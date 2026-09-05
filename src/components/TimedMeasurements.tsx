@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Timer, Lock, Unlock, Play, CheckCircle2, Clock, AlertTriangle, Trash2 } from 'lucide-react';
 import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
 import { getMissingMeasurementFields, processSingleMeasurement } from '../utils/electricalCalculations';
 
@@ -177,6 +177,32 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     }
   };
 
+  const handleClearMeasurement = (measIndex: number) => {
+    const current = measurements[measIndex];
+    const cleared: SingleMeasurement = {
+      ...current,
+      van: 0,
+      vbn: 0,
+      vcn: 0,
+      vab: 0,
+      vbc: 0,
+      vca: 0,
+      ia: 0,
+      ib: 0,
+      ic: 0,
+      in: 0,
+      totalKva: 0,
+      avgVoltagePhasePhase: 0,
+      avgVoltagePhaseNeutral: 0,
+      avgCurrent: 0,
+      loadingPercent: 0,
+      fdtpPercent: 0,
+      timestamp: '',
+      isRecorded: false
+    };
+    onChangeMeasurement(measIndex, cleared);
+  };
+
   const handleBypassTimer1 = () => {
     setIsTimer1Running(false);
     setTimer1Seconds(0);
@@ -271,9 +297,19 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                   1ª Medição (T = 0 min)
                 </h3>
               </div>
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                LIBERADO
-              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleClearMeasurement(0)}
+                  title="Limpar campos da 1ª Medição"
+                  className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                  LIBERADO
+                </span>
+              </div>
             </div>
 
             {/* Inputs Van, Vbn, Vcn */}
@@ -449,15 +485,25 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                 </h3>
               </div>
 
-              {measurements[1].isLocked ? (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> BLOQUEADO
-                </span>
-              ) : (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                  <Unlock className="w-3 h-3" /> LIBERADO
-                </span>
-              )}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleClearMeasurement(1)}
+                  title="Limpar campos da 2ª Medição"
+                  className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                {measurements[1].isLocked ? (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> BLOQUEADO
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                    <Unlock className="w-3 h-3" /> LIBERADO
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* If locked, display active countdown timer */}
@@ -658,15 +704,25 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
                 </h3>
               </div>
 
-              {measurements[2].isLocked ? (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> BLOQUEADO
-                </span>
-              ) : (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                  <Unlock className="w-3 h-3" /> LIBERADO
-                </span>
-              )}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleClearMeasurement(2)}
+                  title="Limpar campos da 3ª Medição"
+                  className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                {measurements[2].isLocked ? (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> BLOQUEADO
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                    <Unlock className="w-3 h-3" /> LIBERADO
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* If locked, display active countdown timer */}
