@@ -617,10 +617,10 @@ export async function generateTransformerDiagnosticPdf({
   });
 
   // ==========================================
-  // PAGE 4: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA
+  // PAGE 4: BASE NORMATIVA, FÓRMULAS E PARECER TÉCNICO
   // ==========================================
   doc.addPage();
-  drawHeader('PÁGINA 4: BASE NORMATIVA, FÓRMULAS E ASSINATURA TÉCNICA', 4);
+  drawHeader('PÁGINA 4: BASE NORMATIVA, FÓRMULAS E PARECER TÉCNICO', 4);
 
   currentY = 28;
 
@@ -747,107 +747,6 @@ export async function generateTransformerDiagnosticPdf({
     currentY += boxHeight + 8;
   }
 
-  // Assinaturas dos Responsáveis Técnicos (Apenas autores preenchidos recebem assinatura)
-  const activeAuthors = (initialData.authors && initialData.authors.length > 0)
-    ? initialData.authors.filter((a) => a.name && a.name.trim())
-    : [
-        ...(initialData.electrician1Name?.trim() ? [{
-          role: 'ELETRICISTA',
-          name: initialData.electrician1Name.trim(),
-          matricula: initialData.electrician1Matricula?.trim() || ''
-        }] : []),
-        ...(initialData.electrician2Name?.trim() ? [{
-          role: 'ELETRICISTA',
-          name: initialData.electrician2Name.trim(),
-          matricula: initialData.electrician2Matricula?.trim() || ''
-        }] : [])
-      ];
-
-  const authorsToSign = activeAuthors.length > 0 ? activeAuthors : [
-    { role: 'RESPONSÁVEL TÉCNICO', name: 'Responsável Técnico', matricula: '' }
-  ];
-
-  const sigSpace = authorsToSign.length > 2 ? 38 : 28;
-  if (currentY + sigSpace > pageHeight) {
-    doc.addPage();
-    currentY = 28;
-    drawHeader('ASSINATURAS DOS RESPONSÁVEIS TÉCNICOS', doc.getNumberOfPages());
-  }
-
-  // Se houver equipe preenchida, imprime o nome da equipe acima das assinaturas
-  if (initialData.equipe?.trim()) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-    doc.text(`Equipe Responsável: ${initialData.equipe.trim()}`, pageWidth / 2, Math.max(currentY + 6, pageHeight - 42), { align: 'center' });
-  }
-
-  const sigY = Math.max(currentY + 16, pageHeight - 32);
-
-  if (authorsToSign.length === 1) {
-    const a = authorsToSign[0];
-    const lineW = 90;
-    const startX = (pageWidth - lineW) / 2;
-    doc.setDrawColor(148, 163, 184);
-    doc.line(startX, sigY, startX + lineW, sigY);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`${a.name} (${a.role})`, pageWidth / 2, sigY + 4.5, { align: 'center' });
-
-    if (a.matricula?.trim()) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Matrícula / Registro: ${a.matricula.trim()}`, pageWidth / 2, sigY + 8.5, { align: 'center' });
-    }
-  } else if (authorsToSign.length === 2) {
-    const colW = (pageWidth - 2 * margin - 15) / 2;
-    authorsToSign.forEach((a, i) => {
-      const x = margin + i * (colW + 15);
-      doc.setDrawColor(148, 163, 184);
-      doc.line(x + 5, sigY, x + colW - 5, sigY);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(`${a.name} (${a.role})`, x + colW / 2, sigY + 4.5, { align: 'center' });
-
-      if (a.matricula?.trim()) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Matrícula: ${a.matricula.trim()}`, x + colW / 2, sigY + 8.5, { align: 'center' });
-      }
-    });
-  } else {
-    // 3 ou mais autores: grade responsiva
-    const numCols = Math.min(authorsToSign.length, 3);
-    const colGap = 8;
-    const colW = (pageWidth - 2 * margin - (numCols - 1) * colGap) / numCols;
-    authorsToSign.forEach((a, i) => {
-      const colIndex = i % numCols;
-      const rowIndex = Math.floor(i / numCols);
-      const rowY = sigY - (Math.floor((authorsToSign.length - 1) / numCols) - rowIndex) * 16;
-      const x = margin + colIndex * (colW + colGap);
-
-      doc.setDrawColor(148, 163, 184);
-      doc.line(x + 2, rowY, x + colW - 2, rowY);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(`${a.name}`, x + colW / 2, rowY + 3.5, { align: 'center' });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.5);
-      doc.setTextColor(100, 116, 139);
-      const sub = a.matricula?.trim() ? `${a.role} — Matr: ${a.matricula.trim()}` : a.role;
-      doc.text(sub, x + colW / 2, rowY + 7, { align: 'center' });
-    });
-  }
-
   // ==========================================
   // REGISTROS FOTOGRÁFICOS: 1 FOTO POR PÁGINA (SEM DISTORÇÃO) - ATÉ 15 FOTOS
   // ==========================================
@@ -922,19 +821,6 @@ export async function generateTransformerDiagnosticPdf({
         console.warn(`Erro ao inserir foto ${idx + 1} no PDF:`, e);
       }
 
-      // Rodapé técnico em cada página de foto
-      doc.setDrawColor(226, 232, 240);
-      doc.line(margin + 40, pageHeight - 16, pageWidth - margin - 40, pageHeight - 16);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      const authorsFooterStr = authorsToSign.map((a) => `${a.name}${a.matricula ? ` (Matrícula: ${a.matricula})` : ''}`).join(' | ');
-      doc.text(
-        `Responsável: ${authorsFooterStr}`,
-        pageWidth / 2,
-        pageHeight - 13,
-        { align: 'center' }
-      );
     });
   }
 

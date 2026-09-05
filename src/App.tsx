@@ -28,6 +28,7 @@ import {
   loadDiagnosticDraft,
   saveDiagnosticDraft
 } from './utils/diagnosticDraft';
+import { getDeviceDateTime } from './utils/dateTimeService';
 
 export default function App() {
   // Theme State (Light / Dark)
@@ -206,7 +207,7 @@ export default function App() {
     equipe: '',
     locationName: '',
     cityState: '',
-    dateTime: '',
+    dateTime: getDeviceDateTime(),
     utm: null,
     authors: [{ id: '1', role: 'ELETRICISTA', name: '', matricula: '' }],
     electrician1Name: '',
@@ -420,7 +421,7 @@ export default function App() {
       equipe: '',
       locationName: '',
       cityState: '',
-      dateTime: '',
+      dateTime: getDeviceDateTime(),
       utm: null,
       authors: [{ id: '1', role: 'ELETRICISTA', name: '', matricula: '' }],
       electrician1Name: '',

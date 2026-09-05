@@ -3,6 +3,7 @@ import { MapPin, Navigation, User, Calendar, Building2, CheckCircle2, AlertCircl
 import { InitialDiagnosticData, ReportAuthor, AuthorRole } from '../types';
 import { getCurrentGpsPosition, latLonToUtm, utmToLatLon } from '../utils/geoUtm';
 import { reverseGeocodeCoords } from '../utils/reverseGeocoding';
+import { getAutoDateTime, getDeviceDateTime } from '../utils/dateTimeService';
 
 interface GpsLocationFormProps {
   initialData: InitialDiagnosticData;
@@ -56,15 +57,12 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
     initialData.utm?.zone
   ]);
 
-  // Auto-fill initial date and time if empty
+  // Auto-fill initial date and time if empty (de acordo com o dispositivo)
   React.useEffect(() => {
     if (!initialData.dateTime) {
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('pt-BR');
-      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       onChange({
         ...initialData,
-        dateTime: `${dateStr} ${timeStr}`
+        dateTime: getDeviceDateTime()
       });
     }
   }, []);
@@ -150,11 +148,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
 
     try {
       const utm = await getCurrentGpsPosition();
-      
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('pt-BR');
-      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const currentDateTime = `${dateStr} ${timeStr}`;
+      const currentDateTime = await getAutoDateTime();
 
       setLatInput(String(utm.latitude));
       setLonInput(String(utm.longitude));
@@ -358,10 +352,24 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {/* Data e Hora */}
         <div>
-          <label className="label-xs mb-1 flex items-center gap-1 min-h-[18px]">
-            <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>DATA E HORA</span>
-          </label>
+          <div className="flex items-center justify-between mb-1 min-h-[18px]">
+            <label className="label-xs flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>DATA E HORA</span>
+            </label>
+            <button
+              type="button"
+              onClick={async () => {
+                const dt = await getAutoDateTime();
+                onChange({ ...initialData, dateTime: dt });
+              }}
+              title="Atualizar com data e hora atual do dispositivo/rede"
+              className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+            >
+              <RefreshCw className="w-2.5 h-2.5" />
+              Sincronizar
+            </button>
+          </div>
           <input
             type="text"
             value={initialData.dateTime}
