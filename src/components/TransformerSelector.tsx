@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Database, Zap, Shield, Sliders, PlusCircle, RefreshCw, Save, Check, Search, X } from 'lucide-react';
 import { TransformerSpec, TransformerType, PhaseType, InitialDiagnosticData, InmetroTransformerModel } from '../types';
 import { computeNominalLossesAndEfficiency } from '../utils/electricalCalculations';
+import { isCommunityTransformer } from '../utils/githubSync';
 
 export function buildTransformerNameOrId(
   brand?: string,
@@ -212,21 +213,19 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
     });
   }, [inmetroModels]);
 
-  // Separação de placas de campo vs perfis ETU
-  const fieldTransformers = useMemo(() => {
-    return allTransformers.filter(
-      (t) => t.dataOrigin === 'COMMUNITY' || t.state === 'COMMUNITY' || (!t.id.startsWith('ETU-') && !t.id.startsWith('INMETRO-'))
-    );
-  }, [allTransformers]);
-
+  // Separação de perfis normativos ETU vs placas de campo (comunidade)
   const etuTransformers = useMemo(() => {
-    return allTransformers.filter((t) => t.id.startsWith('ETU-'));
+    return allTransformers.filter((t) => !isCommunityTransformer(t) && !t.id.startsWith('INMETRO-'));
   }, [allTransformers]);
 
-  // Catálogo completo unificado
+  const fieldTransformers = useMemo(() => {
+    return allTransformers.filter((t) => isCommunityTransformer(t));
+  }, [allTransformers]);
+
+  // Catálogo completo unificado: Perfis ETU primeiro, depois Placas de Campo, depois INMETRO
   const fullCatalog: TransformerSpec[] = useMemo(() => {
-    return [...fieldTransformers, ...inmetroTransformers, ...etuTransformers];
-  }, [fieldTransformers, inmetroTransformers, etuTransformers]);
+    return [...etuTransformers, ...fieldTransformers, ...inmetroTransformers];
+  }, [etuTransformers, fieldTransformers, inmetroTransformers]);
 
   // Catálogo filtrado por termo de busca e por origem
   const filteredCatalog = useMemo(() => {
@@ -240,6 +239,11 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
 
     const groups: { categoryName: string; items: TransformerSpec[] }[] = [];
 
+    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'ETU') {
+      const items = etuTransformers.filter(matchesSearch);
+      if (items.length > 0) groups.push({ categoryName: `⚡ Perfis Normativos Energisa ETU (${items.length})`, items });
+    }
+
     if (plateCatalogSource === 'ALL' || plateCatalogSource === 'FIELD') {
       const items = fieldTransformers.filter(matchesSearch);
       if (items.length > 0) groups.push({ categoryName: `📋 Placas de Campo / Técnicos (${items.length})`, items });
@@ -250,13 +254,8 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
       if (items.length > 0) groups.push({ categoryName: `🏛️ Modelos Homologados INMETRO / PBE (${items.length})`, items });
     }
 
-    if (plateCatalogSource === 'ALL' || plateCatalogSource === 'ETU') {
-      const items = etuTransformers.filter(matchesSearch);
-      if (items.length > 0) groups.push({ categoryName: `⚡ Perfis Normativos Energisa ETU (${items.length})`, items });
-    }
-
     return groups;
-  }, [plateSearchTerm, plateCatalogSource, fieldTransformers, inmetroTransformers, etuTransformers]);
+  }, [plateSearchTerm, plateCatalogSource, etuTransformers, fieldTransformers, inmetroTransformers]);
 
   // Sync state when selectedTransformer prop changes from outside
   useEffect(() => {
@@ -637,9 +636,9 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
             className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 font-bold focus:border-blue-500 focus:outline-none cursor-pointer"
           >
             <option value="ALL">Todas as Fontes ({fullCatalog.length})</option>
-            <option value="INMETRO">🏛️ Modelos INMETRO ({inmetroTransformers.length})</option>
-            <option value="FIELD">📋 Placas de Campo ({fieldTransformers.length})</option>
             <option value="ETU">⚡ Perfis ETU ({etuTransformers.length})</option>
+            <option value="FIELD">📋 Placas de Campo ({fieldTransformers.length})</option>
+            <option value="INMETRO">🏛️ Modelos INMETRO ({inmetroTransformers.length})</option>
           </select>
         </div>
 
@@ -652,11 +651,25 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
           <option value="">-- Selecionar Placa do Banco de Dados (ou preencher campos abaixo) --</option>
           {filteredCatalog.map((group) => (
             <optgroup key={group.categoryName} label={group.categoryName}>
-              {group.items.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.brand ? `[${t.brand}] ` : ''}{t.powerKva} kVA ({t.phaseType}) — {t.primaryVoltageV >= 1000 ? `${t.primaryVoltageV / 1000}kV` : `${t.primaryVoltageV}V`}/{t.secondaryVoltageV}V | %Z: {t.impedancePercent}% | η: {t.efficiencyPercent}%{t.serialNumber ? ` | Mod: ${t.serialNumber}` : ''}
-                </option>
-              ))}
+              {group.items.map((t) => {
+                const isEtu = !isCommunityTransformer(t) && !t.id.startsWith('INMETRO-');
+                const isNormativeInmetro = t.id.startsWith('INMETRO-');
+
+                let label = '';
+                if (isEtu) {
+                  label = `${t.id} — %Z: ${t.impedancePercent}% | η: ${t.efficiencyPercent}%`;
+                } else if (isNormativeInmetro) {
+                  label = `${t.brand ? `[${t.brand}] ` : ''}${t.powerKva} kVA (${t.phaseType}) — ${t.primaryVoltageV >= 1000 ? `${t.primaryVoltageV / 1000}kV` : `${t.primaryVoltageV}V`}/${t.secondaryVoltageV}V | %Z: ${t.impedancePercent}% | η: ${t.efficiencyPercent}%${t.serialNumber ? ` | Mod: ${t.serialNumber}` : ''}`;
+                } else {
+                  label = `[CAMPO] ${t.brand ? `[${t.brand}] ` : ''}${t.id} — ${t.powerKva} kVA | %Z: ${t.impedancePercent}% | η: ${t.efficiencyPercent}%`;
+                }
+
+                return (
+                  <option key={t.id} value={t.id}>
+                    {label}
+                  </option>
+                );
+              })}
             </optgroup>
           ))}
         </select>
