@@ -19,6 +19,11 @@ export function getEnergisaLogoBase64(): Promise<string> {
   if (energisaLogoBase64Cache) return Promise.resolve(energisaLogoBase64Cache);
 
   return new Promise((resolve) => {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') {
+      resolve('');
+      return;
+    }
+
     const svgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 999.84 325.7" width="999.84" height="325.7">
       <style>.cls-1{fill:#c3cc25;}.cls-2{fill:#049dc5;}</style>
       <g id="Camada_1-2">
@@ -77,8 +82,9 @@ export async function generateTransformerDiagnosticPdf({
 }: PdfExportOptions) {
   const logoBase64 = await getEnergisaLogoBase64();
 
-  const doc = new jsPDF({
-    orientation: 'p',
+  const JsPdfConstructor = (jsPDF as any).jsPDF || jsPDF;
+  const doc = new JsPdfConstructor({
+    orientation: 'portrait',
     unit: 'mm',
     format: 'a4'
   });
@@ -440,8 +446,8 @@ export async function generateTransformerDiagnosticPdf({
     ]);
   } else {
     rowsMeas.push([
-      'VALORES CONSOLIDADOS (1 MEDIÇÃO)',
-      'Resultado',
+      'CONSOLIDADO',
+      'Única',
       isTri ? `${analysis.avgVan} / ${analysis.avgVbn} / ${analysis.avgVcn} V` : `${analysis.avgVan} / ${analysis.avgVbn} V`,
       isTri ? `${analysis.avgVab} / ${analysis.avgVbc} / ${analysis.avgVca} V` : `${analysis.avgVab} V`,
       isTri ? `${analysis.avgIa} / ${analysis.avgIb} / ${analysis.avgIc} A (In: ${analysis.avgIn || 0}A)` : `${analysis.avgIa} / ${analysis.avgIb} A (In: ${analysis.avgIn || 0}A)`,
@@ -454,18 +460,32 @@ export async function generateTransformerDiagnosticPdf({
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Etapa de Teste', 'Horário Log', 'Tensão Fase-Neutro (A/B/C)', 'Tensão Fase-Fase (AB/BC/CA)', 'Correntes (Ia/Ib/Ic) e Neutro', 'Carregamento', 'Carga (Pico)', 'FDTP %']],
+    head: [['Etapa', 'Horário', 'Tensão F-N (V)', 'Tensão F-F (V)', 'Correntes (A) / In', 'Potência', 'Carreg. Pico', 'FDTP']],
     body: rowsMeas,
     theme: 'striped',
     headStyles: {
       fillColor: [30, 58, 138],
       textColor: [255, 255, 255],
-      fontSize: 8,
-      fontStyle: 'bold'
+      fontSize: 7.2,
+      fontStyle: 'bold',
+      halign: 'center',
+      valign: 'middle'
     },
     bodyStyles: {
-      fontSize: 7.5,
-      textColor: [30, 41, 59]
+      fontSize: 6.8,
+      textColor: [30, 41, 59],
+      cellPadding: 1.5,
+      valign: 'middle'
+    },
+    columnStyles: {
+      0: { cellWidth: 23, fontStyle: 'bold' },
+      1: { cellWidth: 15, halign: 'center' },
+      2: { cellWidth: 28, halign: 'center' },
+      3: { cellWidth: 28, halign: 'center' },
+      4: { cellWidth: 38, halign: 'center' },
+      5: { cellWidth: 18, halign: 'center' },
+      6: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+      7: { cellWidth: 14, halign: 'center' }
     },
     didParseCell: (data) => {
       if (data.section === 'body' && data.row.index === rowsMeas.length - 1) {
@@ -477,7 +497,7 @@ export async function generateTransformerDiagnosticPdf({
 
   // Block 5: Parecer Técnico e Resultados Consolidados
   // @ts-ignore
-  currentY = doc.lastAutoTable.finalY + 7;
+  currentY = doc.lastAutoTable.finalY + 6;
 
   // Cálculo de Desequilíbrio de Corrente na Rede BT
   const iTri = transformer.phaseType === 'TRIFASICO';
@@ -505,48 +525,72 @@ export async function generateTransformerDiagnosticPdf({
   const boxWidth = pageWidth - margin * 2;
   const startBoxY = currentY;
 
+  let textY = currentY + 4.5;
+
+  // Helper com medição precisa e splitTextToSize rigoroso para nunca cortar nem vazar nada para fora da área
+  const printItem = (label: string, value: string, isAlert = false) => {
+    doc.setFontSize(7.3);
+    doc.setFont('helvetica', 'bold');
+    const labelWithColon = `${label}: `;
+    const labelW = doc.getTextWidth(labelWithColon);
+
+    if (labelW > 50) {
+      // Label longo: imprime rótulo numa linha e valor identado na linha seguinte
+      doc.setTextColor(15, 23, 42);
+      doc.text(labelWithColon, margin + 5, textY);
+      textY += 3.6;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(isAlert ? 185 : 30, isAlert ? 28 : 41, isAlert ? 28 : 59);
+      const valLines = doc.splitTextToSize(value, boxWidth - 14);
+      valLines.forEach((vl: string) => {
+        doc.text(vl, margin + 8, textY);
+        textY += 3.5;
+      });
+    } else {
+      // Label curto ou médio: rótulo à esquerda e valor alinhado ao lado
+      const availW = boxWidth - 12 - labelW;
+      doc.setFont('helvetica', 'normal');
+      const valLines = doc.splitTextToSize(value, availW);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(labelWithColon, margin + 5, textY);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(isAlert ? 185 : 30, isAlert ? 28 : 41, isAlert ? 28 : 59);
+      doc.text(valLines[0] || '', margin + 5 + labelW, textY);
+      textY += 3.6;
+
+      if (valLines.length > 1) {
+        for (let i = 1; i < valLines.length; i++) {
+          doc.text(valLines[i], margin + 5 + labelW, textY);
+          textY += 3.5;
+        }
+      }
+    }
+  };
+
   // Bloco 1: RESUMO GERAL DO ESTADO OPERACIONAL
-  let textY = currentY + 5;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
   doc.text('• RESUMO GERAL DO ESTADO OPERACIONAL (NDU 006 / NBR 5356-7):', margin + 3, textY);
-  textY += 4.5;
+  textY += 4.2;
 
   const condicaoText = (analysis.maxPhaseLoadingPercent || 0) > 100
     ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA CRÍTICA TRIFÁSICA')
     : analysis.loadingCondition.replace('_', ' ');
   const condicaoDetalhe = `${condicaoText} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text('Condição: ', margin + 6, textY);
-  const wCondLabel = doc.getTextWidth('Condição: ');
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor((analysis.maxPhaseLoadingPercent || 0) > 100 ? 185 : 30, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 28 : 41, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 28 : 59);
-  doc.text(condicaoDetalhe, margin + 6 + wCondLabel, textY);
-  textY += 4.2;
+  printItem('Condição', condicaoDetalhe, (analysis.maxPhaseLoadingPercent || 0) > 100);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text('Tensão Secundária PRODIST Módulo 8: ', margin + 6, textY);
-  const wTensLabel = doc.getTextWidth('Tensão Secundária PRODIST Módulo 8: ');
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(30, 41, 59);
   const tensaoDetalhe = `Tensão média de ${analysis.overallAvgPhasePhaseV} V (Conforme / Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`;
-  doc.text(doc.splitTextToSize(tensaoDetalhe, boxWidth - 12 - wTensLabel)[0] || '', margin + 6 + wTensLabel, textY);
-  textY += 4.2;
+  printItem('Tensão Secundária PRODIST Módulo 8', tensaoDetalhe);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text('Proteção Primária Recomendada: ', margin + 6, textY);
-  const wProtLabel = doc.getTextWidth('Proteção Primária Recomendada: ');
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(30, 41, 59);
   const fuseText = analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Elo 5H';
-  doc.text(`${fuseText} (Norma NDU/ETU — ${transformer.primaryVoltageV / 1000} kV / ${transformer.powerKva} kVA).`, margin + 6 + wProtLabel, textY);
-  textY += 6;
+  printItem('Proteção Primária Recomendada', `${fuseText} (Norma NDU/ETU — ${transformer.primaryVoltageV / 1000} kV / ${transformer.powerKva} kVA).`);
+  textY += 2;
 
   // Bloco 2: DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO
   if (pba) {
@@ -554,82 +598,75 @@ export async function generateTransformerDiagnosticPdf({
     doc.setFontSize(8);
     doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
     doc.text('• DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO:', margin + 3, textY);
-    textY += 4.5;
+    textY += 4.2;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text('Fases dentro do nominal: ', margin + 6, textY);
-    const wDentroLabel = doc.getTextWidth('Fases dentro do nominal: ');
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(30, 41, 59);
     const dentroText = pba.phasesWithinNominal.length > 0
       ? pba.phasesWithinNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')
       : `Nenhuma (todas operando acima de 100% da capacidade nominal de ${pba.nominalCurrentA} A).`;
-    doc.text(dentroText, margin + 6 + wDentroLabel, textY);
-    textY += 4.2;
+    printItem('Fases dentro do nominal', dentroText);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text('Fases fora do nominal / sobrecarga (> 100%): ', margin + 6, textY);
-    const wForaLabel = doc.getTextWidth('Fases fora do nominal / sobrecarga (> 100%): ');
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor((pba.phasesExceedingNominal.length > 0) ? 185 : 30, (pba.phasesExceedingNominal.length > 0) ? 28 : 41, (pba.phasesExceedingNominal.length > 0) ? 28 : 59);
     const foraText = pba.phasesExceedingNominal.length > 0
       ? pba.phasesExceedingNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')
       : 'Nenhuma.';
-    doc.text(foraText, margin + 6 + wForaLabel, textY);
-    textY += 4.2;
+    printItem('Fases fora do nominal / sobrecarga (> 100%)', foraText, pba.phasesExceedingNominal.length > 0);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text('Carregamento projetado após balanceamento perfeito: ', margin + 6, textY);
-    const wProjBalLabel = doc.getTextWidth('Carregamento projetado após balanceamento perfeito: ');
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(pba.willBeWithinNominalAfterBalancing ? 22 : 185, pba.willBeWithinNominalAfterBalancing ? 101 : 28, pba.willBeWithinNominalAfterBalancing ? 52 : 28);
-    doc.text(`${pba.postBalancingLoadingPercent}% (${pba.postBalancingCurrentA} A médios por fase).`, margin + 6 + wProjBalLabel, textY);
-    textY += 4.5;
+    printItem('Carregamento projetado após balanceamento perfeito', `${pba.postBalancingLoadingPercent}% (${pba.postBalancingCurrentA} A médios por fase).`, !pba.willBeWithinNominalAfterBalancing);
+    textY += 1.5;
 
     // Caixa de Veredito de Balanceamento
-    const verdictLines = doc.splitTextToSize(`Parecer de Remanejamento: ${pba.verdict}`, boxWidth - 14);
-    const verdictH = verdictLines.length * 3.8 + 4;
+    const verdictLines = doc.splitTextToSize(pba.verdict, boxWidth - 16);
+    const verdictH = verdictLines.length * 3.5 + 7;
+
     doc.setFillColor(pba.willBeWithinNominalAfterBalancing ? 240 : 254, pba.willBeWithinNominalAfterBalancing ? 253 : 242, pba.willBeWithinNominalAfterBalancing ? 244 : 242);
     doc.setDrawColor(pba.willBeWithinNominalAfterBalancing ? 187 : 254, pba.willBeWithinNominalAfterBalancing ? 247 : 202, pba.willBeWithinNominalAfterBalancing ? 208 : 202);
     doc.roundedRect(margin + 4, textY, boxWidth - 8, verdictH, 1.5, 1.5, 'FD');
 
+    let vY = textY + 3.8;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.3);
+    doc.setFontSize(7.2);
     doc.setTextColor(pba.willBeWithinNominalAfterBalancing ? 22 : 153, pba.willBeWithinNominalAfterBalancing ? 101 : 27, pba.willBeWithinNominalAfterBalancing ? 52 : 27);
-    doc.text(verdictLines, margin + 7, textY + 3.5);
-    textY += verdictH + 4;
+    doc.text('Parecer de Remanejamento:', margin + 7, vY);
+    vY += 3.6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.0);
+    verdictLines.forEach((vLine: string) => {
+      doc.text(vLine, margin + 7, vY);
+      vY += 3.4;
+    });
+
+    textY += verdictH + 3;
   }
 
   // Bloco 3: ALERTA DE DESEQUILÍBRIO DE CARGA
   if (isUnbalanced) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(180, 83, 9);
+    doc.text('• ALERTA — DESEQUILÍBRIO DE CARGA NA REDE BT (NDU 006 / NDU 007):', margin + 3, textY);
+    textY += 4.2;
+
     const unbLines = [
       `Desvio de carga de ${unbPercent}% excede o limiar normativo de 15%.`,
       `Fases anômalas: Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).`,
       `Recomendação: Remanejamento imediato de ramais e cargas na rede secundária para evitar aquecimento assimétrico e fusão prematura de elos fusíveis.`
     ];
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(180, 83, 9);
-    doc.text('• ALERTA — DESEQUILÍBRIO DE CARGA NA REDE BT (NDU 006 / NDU 007):', margin + 3, textY);
-    textY += 4.5;
-
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7.2);
     doc.setTextColor(120, 53, 15);
     unbLines.forEach((uLine) => {
-      doc.text(uLine, margin + 6, textY);
-      textY += 3.8;
+      const wrapped = doc.splitTextToSize(uLine, boxWidth - 14);
+      wrapped.forEach((wL: string) => {
+        doc.text(wL, margin + 6, textY);
+        textY += 3.5;
+      });
     });
-    textY += 2;
+    textY += 1;
   }
 
   // Moldura do Container Geral
-  const totalBoxH = textY - startBoxY + 3;
+  const totalBoxH = textY - startBoxY + 2.5;
   doc.setDrawColor(203, 213, 225);
   doc.setLineWidth(0.4);
   doc.roundedRect(margin, startBoxY, boxWidth, totalBoxH, 2, 2, 'S');
@@ -730,7 +767,25 @@ export async function generateTransformerDiagnosticPdf({
       ]
     ],
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 }
+    headStyles: {
+      fillColor: [30, 58, 138],
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'center',
+      valign: 'middle'
+    },
+    bodyStyles: {
+      fontSize: 7,
+      textColor: [30, 41, 59],
+      cellPadding: 2,
+      valign: 'middle'
+    },
+    columnStyles: {
+      0: { cellWidth: 38, fontStyle: 'bold' },
+      1: { cellWidth: 46 },
+      2: { cellWidth: 98 }
+    }
   });
 
   // @ts-ignore
@@ -816,12 +871,30 @@ export async function generateTransformerDiagnosticPdf({
   currentY += 3.5;
 
   const formulaRows = [
-    ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van·Ia + Vbn·Ib + Vcn·Ic   ou   S = √3 · V_méd · I_méd / 1000  (kVA)'],
-    ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (I_fase / I_nominal) × 100; Limite governado pelo pico da fase mais carregada'],
-    ['FDTP — fórmula exata PRODIST Módulo 8', 'β = (Vab⁴ + Vbc⁴ + Vca⁴) / (Vab² + Vbc² + Vca²)²;  FDTP = 100 × √((1 - √(3 - 6β)) / (1 + √(3 - 6β)))'],
-    ['Desbalanço de corrente (triagem BT)', 'Desvio (%) = 100 × máx |I_fase - I_média| / I_média (Orientativo para balanceamento NDU 006/007 — Limiar: 15%)'],
-    ['Perdas no cobre sob carga', 'Pk(I) = Pk,75 × [(Ia² + Ib² + Ic²) / (3 × I_nominal²)] (Física das perdas Joule)'],
-    ['Rendimento estimado sob carga', 'η = [P_ativa / (P_ativa + P0 + Pk(I))] × 100']
+    [
+      'Potência aparente trifásica\n(IEEE Std 1459)',
+      'S = (Van*Ia + Vbn*Ib + Vcn*Ic) / 1000  (kVA)\nou por média simétrica: S = sqrt(3) * V_med * I_med / 1000  (kVA)'
+    ],
+    [
+      'Carregamento por fase e pico\n(NBR 5356-7 / NDU 006)',
+      'Carga Fase (%) = (I_fase / I_nominal) * 100\nCritério de conformidade governado pelo pico da fase mais carregada'
+    ],
+    [
+      'FDTP — fórmula exata\n(PRODIST Módulo 8)',
+      'beta = (Vab^4 + Vbc^4 + Vca^4) / (Vab^2 + Vbc^2 + Vca^2)^2\nFDTP (%) = 100 * sqrt( (1 - sqrt(3 - 6*beta)) / (1 + sqrt(3 - 6*beta)) )'
+    ],
+    [
+      'Desbalanço de corrente\n(NDU 006 / NDU 007)',
+      'Desvio (%) = 100 * max |I_fase - I_media| / I_media\n(Orientativo para balanceamento de rede BT — Limiar: 15%)'
+    ],
+    [
+      'Perdas no cobre sob carga real\n(Efeito Joule)',
+      'Pk(I) = Pk_75C * [ (Ia^2 + Ib^2 + Ic^2) / (3 * I_nominal^2) ]'
+    ],
+    [
+      'Rendimento estimado sob carga\n(Operacional)',
+      'Rendimento (%) = [ P_ativa / (P_ativa + P0 + Pk(I)) ] * 100'
+    ]
   ];
 
   autoTable(doc, {
@@ -830,11 +903,23 @@ export async function generateTransformerDiagnosticPdf({
     head: [['Métrica Calculada', 'Fórmula / Equação Matemática Utilizada']],
     body: formulaRows,
     theme: 'striped',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
-    bodyStyles: { fontSize: 7, cellPadding: 1.2 },
+    headStyles: {
+      fillColor: [30, 58, 138],
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'center',
+      valign: 'middle'
+    },
+    bodyStyles: {
+      fontSize: 6.8,
+      textColor: [30, 41, 59],
+      cellPadding: 1.8,
+      valign: 'middle'
+    },
     columnStyles: {
-      0: { cellWidth: 54, fontStyle: 'bold' },
-      1: { cellWidth: 128 }
+      0: { cellWidth: 50, fontStyle: 'bold' },
+      1: { cellWidth: 132 }
     }
   });
 
@@ -968,7 +1053,17 @@ export async function generateTransformerDiagnosticPdf({
     doc.text(`Página ${i} de ${totalDocPages}`, curPWidth - margin, curPHeight - 5, { align: 'right' });
   }
 
-  // Save / Download PDF
-  const filename = `Laudo_Trafo_${initialData.transformerTag || 'TAG'}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  // Save / Download PDF (Formato estrito: NOME_DO_TRANSFORMADOR_DATA_HORA.pdf)
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fileDate = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}`;
+  const fileTime = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const cleanTrafoTag = (initialData.transformerTag || 'TRANSFORMADOR')
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/\s+/g, '_');
+
+  const filename = `${cleanTrafoTag}_${fileDate}_${fileTime}.pdf`;
+  console.log('PDF generator saving filename:', filename);
   doc.save(filename);
 }

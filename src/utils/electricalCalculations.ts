@@ -878,7 +878,7 @@ export function performFullDiagnosticAnalysis(
   // (NDU 006 / NDU 007 / ABNT NBR 5356-7)
   // -------------------------------------------------------------
   const roundedNominalCurrentA = Math.round(nominalCurrentSecondaryA * 10) / 10;
-  
+
   const phaseDetailList: Array<{ phase: 'A' | 'B' | 'C'; current: number; loadingPercent: number }> = isTri
     ? [
         { phase: 'A', current: Math.round(avgIa * 10) / 10, loadingPercent: Math.round(loadingPercentA * 10) / 10 },
