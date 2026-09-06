@@ -490,9 +490,26 @@ export function getOfflineFuseRecommendations(): FuseRecommendation[] {
   return cachedFuses.map((item) => ({ ...item }));
 }
 
-/** Faixas nominais exatas do PRODIST carregadas do SQLite ativo. */
+export const ENERGISA_STANDARD_SYSTEMS = ['220/127', '380/220', '254/127', '440/220'];
+
+export const ENERGISA_DEFAULT_VOLTAGE_RANGES: ProdistVoltageRange[] = [
+  { system: '220/127', connection: 'FF', nominalV: 220, adequateMinV: 202, adequateMaxV: 231, precariousLowMinV: 191, precariousHighMaxV: 233, criticalLowBelowV: 191, criticalHighAboveV: 233, sourcePage: 1 },
+  { system: '220/127', connection: 'FN', nominalV: 127, adequateMinV: 117, adequateMaxV: 133, precariousLowMinV: 110, precariousHighMaxV: 135, criticalLowBelowV: 110, criticalHighAboveV: 135, sourcePage: 1 },
+  { system: '380/220', connection: 'FF', nominalV: 380, adequateMinV: 350, adequateMaxV: 399, precariousLowMinV: 331, precariousHighMaxV: 403, criticalLowBelowV: 331, criticalHighAboveV: 403, sourcePage: 1 },
+  { system: '380/220', connection: 'FN', nominalV: 220, adequateMinV: 202, adequateMaxV: 231, precariousLowMinV: 191, precariousHighMaxV: 233, criticalLowBelowV: 191, criticalHighAboveV: 233, sourcePage: 1 },
+  { system: '254/127', connection: 'FF', nominalV: 254, adequateMinV: 234, adequateMaxV: 267, precariousLowMinV: 221, precariousHighMaxV: 269, criticalLowBelowV: 221, criticalHighAboveV: 269, sourcePage: 1 },
+  { system: '254/127', connection: 'FN', nominalV: 127, adequateMinV: 117, adequateMaxV: 133, precariousLowMinV: 110, precariousHighMaxV: 135, criticalLowBelowV: 110, criticalHighAboveV: 135, sourcePage: 1 },
+  { system: '440/220', connection: 'FF', nominalV: 440, adequateMinV: 405, adequateMaxV: 462, precariousLowMinV: 383, precariousHighMaxV: 466, criticalLowBelowV: 383, criticalHighAboveV: 466, sourcePage: 1 },
+  { system: '440/220', connection: 'FN', nominalV: 220, adequateMinV: 202, adequateMaxV: 231, precariousLowMinV: 191, precariousHighMaxV: 233, criticalLowBelowV: 191, criticalHighAboveV: 233, sourcePage: 1 }
+];
+
+/** Faixas nominais exatas do PRODIST para os padrões operacionais do Grupo Energisa. */
 export function getOfflineProdistVoltageRanges(): ProdistVoltageRange[] {
-  return cachedVoltageRanges.map((item) => ({ ...item }));
+  const filtered = cachedVoltageRanges.filter((item) => ENERGISA_STANDARD_SYSTEMS.includes(item.system));
+  if (filtered.length > 0) {
+    return filtered.map((item) => ({ ...item }));
+  }
+  return ENERGISA_DEFAULT_VOLTAGE_RANGES.map((item) => ({ ...item }));
 }
 
 export function getDiagnosticRuleValue(key: string, fallback: number): number {
@@ -513,9 +530,16 @@ export function classifyProdistVoltage(
 ): { status: 'ADEQUADA' | 'PRECARIA' | 'CRITICA'; range: ProdistVoltageRange } | null {
   if (measuredVoltageV <= 0 || nominalVoltageV <= 0) return null;
 
-  let range: ProdistVoltageRange | undefined = cachedVoltageRanges.find(
+  const validRanges = getOfflineProdistVoltageRanges();
+  let range: ProdistVoltageRange | undefined = validRanges.find(
     (candidate) => candidate.connection === connection && Math.abs(candidate.nominalV - nominalVoltageV) < 1.0
   );
+
+  if (!range) {
+    range = cachedVoltageRanges.find(
+      (candidate) => candidate.connection === connection && Math.abs(candidate.nominalV - nominalVoltageV) < 1.0
+    );
+  }
 
   // Fallback analítico oficial PRODIST Módulo 8 da ANEEL (0.92 a 1.05 = Adequada; 0.87 a 1.06 = Precária)
   if (!range) {

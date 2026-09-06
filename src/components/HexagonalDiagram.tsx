@@ -495,7 +495,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
         ref={canvasRef}
         style={{
           width: '100%',
-          maxWidth: `${width}px`,
+          maxWidth: '100%',
           height: 'auto',
           aspectRatio: `${width}/${height}`
         }}

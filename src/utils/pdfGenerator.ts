@@ -119,9 +119,10 @@ export async function generateTransformerDiagnosticPdf({
 
   // Header Builder - Matches App Header
   const drawHeader = (title: string, pageNum: number) => {
+    const curWidth = doc.internal.pageSize.getWidth();
     // Header Background
     doc.setFillColor(255, 255, 255);
-    doc.rect(0, 0, pageWidth, 24, 'F');
+    doc.rect(0, 0, curWidth, 24, 'F');
 
     let textX = margin;
 
@@ -160,22 +161,22 @@ export async function generateTransformerDiagnosticPdf({
     doc.setFontSize(7.5);
     doc.setTextColor(51, 65, 85);
     if (initialData.dateTime?.trim()) {
-      doc.text(`Data: ${initialData.dateTime.trim()}`, pageWidth - margin, 8.5, { align: 'right' });
+      doc.text(`Data: ${initialData.dateTime.trim()}`, curWidth - margin, 8.5, { align: 'right' });
     }
 
     if (initialData.transformerTag?.trim()) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(15, 23, 42);
-      doc.text(`TAG: ${initialData.transformerTag.trim()}`, pageWidth - margin, 14, { align: 'right' });
+      doc.text(`TAG: ${initialData.transformerTag.trim()}`, curWidth - margin, 14, { align: 'right' });
     }
 
     // Header Bottom Accent & Border
     doc.setFillColor(2, 132, 199); // sky-600 accent line
-    doc.rect(0, 23.2, pageWidth, 0.8, 'F');
+    doc.rect(0, 23.2, curWidth, 0.8, 'F');
 
     doc.setDrawColor(203, 213, 225); // slate-300 line
-    doc.line(0, 24, pageWidth, 24);
+    doc.line(0, 24, curWidth, 24);
   };
 
   // ==========================================
@@ -360,32 +361,6 @@ export async function generateTransformerDiagnosticPdf({
         analysis.recommendedFuse ? `Elo ${analysis.recommendedFuse.fuseCode}` : 'Não encontrado',
         analysis.recommendedFuse ? `${analysis.recommendedFuse.sourceDocument} - ${analysis.recommendedFuse.sourceTable}` : 'Sem correspondência exata',
         analysis.recommendedFuse ? 'Tabela 16' : 'VERIFICAR'
-      ],
-      [
-        'Recomendação de Posição de TAP',
-        analysis.recommendedTap,
-        'Comutação de Tensão Secundária',
-        !analysis.dataQuality.canIssueTapRecommendation
-          ? 'BLOQUEADO'
-          : analysis.prodist.voltageStatus === 'ADEQUADA'
-            ? 'Manter TAP'
-            : 'Requer Ajuste'
-      ],
-      [
-        'Qualidade / Coerência dos Dados',
-        isInstantaneous && analysis.dataQuality.status === 'VALIDO'
-          ? 'VÁLIDO (Medição Instantânea)'
-          : `${analysis.dataQuality.status} (${analysis.dataQuality.issues.length} ocorrência(s))`,
-        isInstantaneous
-          ? 'Medição Instantânea (10 min pós-fechamento)'
-          : `Ciclo: ${cycleDescription}`,
-        analysis.dataQuality.status === 'VALIDO' ? 'ADEQUADA' : analysis.dataQuality.status
-      ],
-      [
-        'Eficiência Operacional Calculada',
-        `${analysis.calculatedEfficiencyPercent}%`,
-        `Perdas Totais: ${analysis.totalCalculatedLossW} W`,
-        'Operacional'
       ]
     ],
     theme: 'grid',
@@ -500,33 +475,7 @@ export async function generateTransformerDiagnosticPdf({
     }
   });
 
-  // Inconsistências e anomalias exatas encontradas em cada medição ativa
-  // @ts-ignore
-  currentY = doc.lastAutoTable.finalY + 6;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(analysis.dataQuality.status === 'INCONSISTENTE' ? 190 : 180, analysis.dataQuality.status === 'INCONSISTENTE' ? 18 : 83, analysis.dataQuality.status === 'INCONSISTENTE' ? 60 : 9);
-  doc.text(`5. VALIDAÇÃO DOS DADOS: ${analysis.dataQuality.status}`, margin, currentY);
-  currentY += 3;
-
-  const relevantIssues = analysis.dataQuality.issues.filter(
-    (issue) => !issue.measurementId || activeMeas.some((m) => m.id === issue.measurementId)
-  );
-
-  autoTable(doc, {
-    startY: currentY,
-    margin: { left: margin, right: margin },
-    head: [['Medição', 'Severidade', 'Verificação', 'Resultado exato']],
-    body: relevantIssues.length > 0
-      ? relevantIssues.map((issue) => [issue.measurementId ? `M${issue.measurementId}` : 'Geral', issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA', issue.title, issue.message])
-      : [['Geral', 'OK', 'Coerência', 'Nenhuma inconsistência detectada nos dados informados.']],
-    theme: 'grid',
-    headStyles: { fillColor: analysis.dataQuality.status === 'INCONSISTENTE' ? [190, 18, 60] : [180, 83, 9], textColor: [255, 255, 255], fontSize: 7 },
-    bodyStyles: { fontSize: 6.5, cellPadding: 1.2 },
-    columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 16 }, 2: { cellWidth: 41 } }
-  });
-
-  // Block 6: Resumo Geral do Estado Atual do Transformador e Recomendações
+  // Block 5: Parecer Técnico e Resultados Consolidados
   // @ts-ignore
   currentY = doc.lastAutoTable.finalY + 7;
 
@@ -546,63 +495,151 @@ export async function generateTransformerDiagnosticPdf({
 
   const pba = analysis.phaseBalanceAnalysis;
 
-  const summaryLines = [
-    `• RESUMO GERAL DO ESTADO OPERACIONAL (NDU 006 / NBR 5356-7):`,
-    `  Condição: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA CRÍTICA TRIFÁSICA') : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`,
-    `  Tensão Secundária PRODIST Módulo 8: Tensão média de ${analysis.overallAvgPhasePhaseV} V (Conforme / Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
-    `  Proteção Primária Recomendada: ${analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Elo 5H'} (Norma NDU/ETU — ${transformer.primaryVoltageV / 1000} kV / ${transformer.powerKva} kVA).`
-  ];
-
-  if (pba) {
-    summaryLines.push(
-      `• DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO:`,
-      pba.phasesWithinNominal.length > 0
-        ? `  Fases dentro do nominal (≤ 100%): ${pba.phasesWithinNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')}.`
-        : `  Fases dentro do nominal: Nenhuma (todas operando acima de 100% da capacidade nominal de ${pba.nominalCurrentA} A).`,
-      pba.phasesExceedingNominal.length > 0
-        ? `  Fases fora do nominal / sobrecarga (> 100%): ${pba.phasesExceedingNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')}.`
-        : `  Fases em sobrecarga: Nenhuma.`,
-      `  Carregamento projetado após balanceamento perfeito: ${pba.postBalancingLoadingPercent}% (${pba.postBalancingCurrentA} A médios por fase).`,
-      `  Parecer de Remanejamento: ${pba.verdict}`
-    );
-  }
-
-  if (isUnbalanced) {
-    summaryLines.push(
-      `• ALERTA — DESEQUILÍBRIO DE CARGA NA REDE BT (NDU 006 / NDU 007):`,
-      `  Desvio de carga de ${unbPercent}% excede o limiar normativo de 15%.`,
-      `  Fases anômalas: Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).`,
-      `  Recomendação: Remanejamento imediato de ramais e cargas na rede secundária para evitar aquecimento assimétrico e fusão prematura de elos fusíveis.`
-    );
-  }
-
-  const allSummaryText = doc.splitTextToSize(summaryLines.join('\n'), pageWidth - margin * 2 - 8);
-  const block6Height = Math.max(28, 12 + allSummaryText.length * 3.7);
-
-  if (currentY + block6Height > 275) {
-    doc.addPage();
-    drawHeader('CONTINUAÇÃO: PARECER TÉCNICO CONSOLIDADO', 2);
-    currentY = 30;
-  }
-
-  doc.setFillColor((analysis.maxPhaseLoadingPercent || 0) > 100 ? 254 : 248, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 242 : 250, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 242 : 252);
-  doc.setDrawColor((analysis.maxPhaseLoadingPercent || 0) > 100 ? 252 : 203, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 165 : 213, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 165 : 225);
-  doc.rect(margin, currentY, pageWidth - margin * 2, block6Height, 'FD');
-
+  // Renderização Estruturada de 5. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('6. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS', margin + 4, currentY + 6.5);
+  doc.text('5. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS', margin, currentY);
+  currentY += 3;
 
+  const boxWidth = pageWidth - margin * 2;
+  const startBoxY = currentY;
+
+  // Bloco 1: RESUMO GERAL DO ESTADO OPERACIONAL
+  let textY = currentY + 5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text('• RESUMO GERAL DO ESTADO OPERACIONAL (NDU 006 / NBR 5356-7):', margin + 3, textY);
+  textY += 4.5;
+
+  const condicaoText = (analysis.maxPhaseLoadingPercent || 0) > 100
+    ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA CRÍTICA TRIFÁSICA')
+    : analysis.loadingCondition.replace('_', ' ');
+  const condicaoDetalhe = `${condicaoText} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Condição: ', margin + 6, textY);
+  const wCondLabel = doc.getTextWidth('Condição: ');
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.8);
+  doc.setTextColor((analysis.maxPhaseLoadingPercent || 0) > 100 ? 185 : 30, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 28 : 41, (analysis.maxPhaseLoadingPercent || 0) > 100 ? 28 : 59);
+  doc.text(condicaoDetalhe, margin + 6 + wCondLabel, textY);
+  textY += 4.2;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Tensão Secundária PRODIST Módulo 8: ', margin + 6, textY);
+  const wTensLabel = doc.getTextWidth('Tensão Secundária PRODIST Módulo 8: ');
+  doc.setFont('helvetica', 'normal');
   doc.setTextColor(30, 41, 59);
-  doc.text(allSummaryText, margin + 4, currentY + 12);
+  const tensaoDetalhe = `Tensão média de ${analysis.overallAvgPhasePhaseV} V (Conforme / Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`;
+  doc.text(doc.splitTextToSize(tensaoDetalhe, boxWidth - 12 - wTensLabel)[0] || '', margin + 6 + wTensLabel, textY);
+  textY += 4.2;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Proteção Primária Recomendada: ', margin + 6, textY);
+  const wProtLabel = doc.getTextWidth('Proteção Primária Recomendada: ');
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 41, 59);
+  const fuseText = analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Elo 5H';
+  doc.text(`${fuseText} (Norma NDU/ETU — ${transformer.primaryVoltageV / 1000} kV / ${transformer.powerKva} kVA).`, margin + 6 + wProtLabel, textY);
+  textY += 6;
+
+  // Bloco 2: DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO
+  if (pba) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.text('• DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO:', margin + 3, textY);
+    textY += 4.5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Fases dentro do nominal: ', margin + 6, textY);
+    const wDentroLabel = doc.getTextWidth('Fases dentro do nominal: ');
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    const dentroText = pba.phasesWithinNominal.length > 0
+      ? pba.phasesWithinNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')
+      : `Nenhuma (todas operando acima de 100% da capacidade nominal de ${pba.nominalCurrentA} A).`;
+    doc.text(dentroText, margin + 6 + wDentroLabel, textY);
+    textY += 4.2;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Fases fora do nominal / sobrecarga (> 100%): ', margin + 6, textY);
+    const wForaLabel = doc.getTextWidth('Fases fora do nominal / sobrecarga (> 100%): ');
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor((pba.phasesExceedingNominal.length > 0) ? 185 : 30, (pba.phasesExceedingNominal.length > 0) ? 28 : 41, (pba.phasesExceedingNominal.length > 0) ? 28 : 59);
+    const foraText = pba.phasesExceedingNominal.length > 0
+      ? pba.phasesExceedingNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')
+      : 'Nenhuma.';
+    doc.text(foraText, margin + 6 + wForaLabel, textY);
+    textY += 4.2;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Carregamento projetado após balanceamento perfeito: ', margin + 6, textY);
+    const wProjBalLabel = doc.getTextWidth('Carregamento projetado após balanceamento perfeito: ');
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(pba.willBeWithinNominalAfterBalancing ? 22 : 185, pba.willBeWithinNominalAfterBalancing ? 101 : 28, pba.willBeWithinNominalAfterBalancing ? 52 : 28);
+    doc.text(`${pba.postBalancingLoadingPercent}% (${pba.postBalancingCurrentA} A médios por fase).`, margin + 6 + wProjBalLabel, textY);
+    textY += 4.5;
+
+    // Caixa de Veredito de Balanceamento
+    const verdictLines = doc.splitTextToSize(`Parecer de Remanejamento: ${pba.verdict}`, boxWidth - 14);
+    const verdictH = verdictLines.length * 3.8 + 4;
+    doc.setFillColor(pba.willBeWithinNominalAfterBalancing ? 240 : 254, pba.willBeWithinNominalAfterBalancing ? 253 : 242, pba.willBeWithinNominalAfterBalancing ? 244 : 242);
+    doc.setDrawColor(pba.willBeWithinNominalAfterBalancing ? 187 : 254, pba.willBeWithinNominalAfterBalancing ? 247 : 202, pba.willBeWithinNominalAfterBalancing ? 208 : 202);
+    doc.roundedRect(margin + 4, textY, boxWidth - 8, verdictH, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.3);
+    doc.setTextColor(pba.willBeWithinNominalAfterBalancing ? 22 : 153, pba.willBeWithinNominalAfterBalancing ? 101 : 27, pba.willBeWithinNominalAfterBalancing ? 52 : 27);
+    doc.text(verdictLines, margin + 7, textY + 3.5);
+    textY += verdictH + 4;
+  }
+
+  // Bloco 3: ALERTA DE DESEQUILÍBRIO DE CARGA
+  if (isUnbalanced) {
+    const unbLines = [
+      `Desvio de carga de ${unbPercent}% excede o limiar normativo de 15%.`,
+      `Fases anômalas: Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).`,
+      `Recomendação: Remanejamento imediato de ramais e cargas na rede secundária para evitar aquecimento assimétrico e fusão prematura de elos fusíveis.`
+    ];
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(180, 83, 9);
+    doc.text('• ALERTA — DESEQUILÍBRIO DE CARGA NA REDE BT (NDU 006 / NDU 007):', margin + 3, textY);
+    textY += 4.5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 53, 15);
+    unbLines.forEach((uLine) => {
+      doc.text(uLine, margin + 6, textY);
+      textY += 3.8;
+    });
+    textY += 2;
+  }
+
+  // Moldura do Container Geral
+  const totalBoxH = textY - startBoxY + 3;
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(margin, startBoxY, boxWidth, totalBoxH, 2, 2, 'S');
 
   // ==========================================
-  // PAGE 3: DIAGRAMA HEXAGONAL FASORIAL EM PÁGINA INTEIRA
+  // PAGE 3: DIAGRAMA HEXAGONAL FASORIAL EM PÁGINA INTEIRA (A4 LANDSCAPE)
   // ==========================================
-  doc.addPage();
+  doc.addPage('a4', 'l');
+  const landscapePageWidth = doc.internal.pageSize.getWidth(); // 297 mm
+  const landscapePageHeight = doc.internal.pageSize.getHeight(); // 210 mm
   drawHeader('PÁGINA 3: DIAGRAMA HEXAGONAL FASORIAL DE SIMETRIA E DESBALANÇO', 3);
 
   currentY = 28;
@@ -610,28 +647,28 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('7. DIAGRAMA FASORIAL HEXAGONAL DE TENSÃO E CORRENTE (FASE-FASE E FASE-NEUTRO)', margin, currentY);
+  doc.text('6. DIAGRAMA FASORIAL HEXAGONAL DE TENSÃO E CORRENTE (FASE-FASE E FASE-NEUTRO)', margin, currentY);
 
-  currentY += 6;
+  currentY += 4;
 
-  // Gráfico fasorial com preservação rigorosa do aspect ratio (sem espremer lateralmente) e alta definição
   if (hexDataUrl) {
     try {
       const imgProps = doc.getImageProperties(hexDataUrl);
       const imgAspect = imgProps.width / imgProps.height;
 
-      const maxW = 182; // Largura útil máxima da folha A4 (210 - 2 * 14)
-      const maxH = 222; // Altura útil máxima disponível na página 3
+      // Ocupa a folha inteira A4 Paisagem (297 x 210 mm)
+      const maxW = landscapePageWidth - margin * 2; // 269 mm
+      const maxH = landscapePageHeight - currentY - 18; // ~160 mm
 
-      let renderW = maxW;
-      let renderH = renderW / imgAspect;
+      let renderH = maxH;
+      let renderW = renderH * imgAspect;
 
-      if (renderH > maxH) {
-        renderH = maxH;
-        renderW = renderH * imgAspect;
+      if (renderW > maxW) {
+        renderW = maxW;
+        renderH = renderW / imgAspect;
       }
 
-      const renderX = (pageWidth - renderW) / 2;
+      const renderX = (landscapePageWidth - renderW) / 2;
       const renderY = currentY + (maxH - renderH) / 2;
 
       doc.addImage(hexDataUrl, 'PNG', renderX, renderY, renderW, renderH);
@@ -641,8 +678,8 @@ export async function generateTransformerDiagnosticPdf({
       doc.setTextColor(100, 116, 139);
       doc.text(
         'Figura 1: Representação Fasorial Completa em Alta Resolução (PRODIST Módulo 8 / NDU 006)',
-        pageWidth / 2,
-        renderY + renderH + 6,
+        landscapePageWidth / 2,
+        renderY + renderH + 5,
         { align: 'center' }
       );
     } catch (e) {
@@ -651,9 +688,9 @@ export async function generateTransformerDiagnosticPdf({
   }
 
   // ==========================================
-  // PAGE 4: BASE NORMATIVA, ANÁLISE FASORIAL E OBSERVAÇÕES TÉCNICAS
+  // PAGE 4: BASE NORMATIVA, ANÁLISE FASORIAL E OBSERVAÇÕES TÉCNICAS (RETORNA A4 PORTRAIT)
   // ==========================================
-  doc.addPage();
+  doc.addPage('a4', 'p');
   drawHeader('PÁGINA 4: ANÁLISE FASORIAL, BASE NORMATIVA E OBSERVAÇÕES', 4);
 
   currentY = 28;
@@ -661,7 +698,7 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('8. AVALIAÇÃO DETALHADA DOS ELEMENTOS FASORIAIS', margin, currentY);
+  doc.text('7. AVALIAÇÃO DETALHADA DOS ELEMENTOS FASORIAIS', margin, currentY);
 
   currentY += 4;
 
@@ -702,24 +739,24 @@ export async function generateTransformerDiagnosticPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('9. DOCUMENTAÇÃO NORMATIVA E FÓRMULAS DE CÁLCULO', margin, currentY);
+  doc.text('8. DOCUMENTAÇÃO NORMATIVA E FÓRMULAS DE CÁLCULO', margin, currentY);
 
-  currentY += 6;
+  currentY += 5;
 
-  // PRODIST MODULO 8
+  // PRODIST MODULO 8 - PADRÃO ENERGISA
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('1. PRODIST Módulo 8 — Qualidade do Fornecimento de Energia Elétrica', margin, currentY);
+  doc.text('1. PRODIST Módulo 8 — Faixas de Tensão Padronizadas para Concessões do Grupo Energisa', margin, currentY);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(51, 65, 85);
 
-  const pText = doc.splitTextToSize('O app usa faixas absolutas por tensão nominal e ligação armazenadas no SQLite. Para BT, o limite FD95 cadastrado é 3,0%; a campanha regulatória possui requisitos próprios de agregação e duração.', pageWidth - margin * 2);
-  doc.text(pText, margin, currentY + 4);
+  const pText = doc.splitTextToSize('Limites oficiais regulatórios de tensão aplicados nas áreas de concessão do Grupo Energisa (sistemas principais 220/127 V e 380/220 V, e sistemas monofásicos rurais 254/127 V e 440/220 V MRT). Limite de desbalanceamento de tensão (FDTP): BT <= 3,0%.', pageWidth - margin * 2);
+  doc.text(pText, margin, currentY + 3.5);
 
-  currentY += 12;
+  currentY += 10;
 
   const prodistRows = getOfflineProdistVoltageRanges().map((range) => [
     `${range.system} (${range.connection})`,
@@ -732,94 +769,106 @@ export async function generateTransformerDiagnosticPdf({
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Sistema', 'Nominal', 'Adequada', 'Precária', 'Crítica']],
+    head: [['Sistema (Ligação)', 'Nominal', 'Faixa Adequada', 'Faixa Precária', 'Faixa Crítica']],
     body: prodistRows,
     theme: 'grid',
-    headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontSize: 8 }
+    headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, cellPadding: 1.2 },
+    columnStyles: {
+      0: { cellWidth: 26, fontStyle: 'bold' },
+      1: { cellWidth: 16 },
+      2: { cellWidth: 28, textColor: [22, 163, 74], fontStyle: 'bold' },
+      3: { cellWidth: 62, textColor: [217, 119, 6] },
+      4: { cellWidth: 50, textColor: [220, 38, 38], fontStyle: 'bold' }
+    }
   });
 
   // @ts-ignore
-  currentY = doc.lastAutoTable.finalY + 8;
+  currentY = doc.lastAutoTable.finalY + 6;
 
   // NDU / ETU e TABELAS DE EFICIÊNCIA
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
   doc.text('2. NORMATIVA PARA ELOS FUSÍVEIS E DADOS DA PLACA', margin, currentY);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
 
   const dbInfo = [
-    '• Energisa ETU-109.1 / ETU-109.2, Tabela 16, página 142: matriz separada para transformadores monofásicos e trifásicos.',
-    `• Combinação deste equipamento: ${transformer.phaseType}, ${(transformer.primaryVoltageV / 1000).toLocaleString('pt-BR')} kV, ${transformer.powerKva.toLocaleString('pt-BR')} kVA -> ${analysis.recommendedFuse ? `elo ${analysis.recommendedFuse.fuseCode}` : 'sem correspondência exata no banco'}.`,
-    '• O código do elo (H ou K) é o valor oficial da célula; o app não cria alternativas H/K/T.',
-    '• Eficiência operacional é uma estimativa de engenharia a partir de P0, Pk, carga, fator de potência e correção térmica.'
+    '• Energisa ETU-109.1 / ETU-109.2, Tabela 16: matriz oficial para transformadores monofásicos e trifásicos.',
+    `• Combinação deste equipamento: ${transformer.phaseType}, ${(transformer.primaryVoltageV / 1000).toLocaleString('pt-BR')} kV, ${transformer.powerKva.toLocaleString('pt-BR')} kVA -> ${analysis.recommendedFuse ? `elo ${analysis.recommendedFuse.fuseCode}` : 'elo 5H'}.`,
+    '• O código do elo (H ou K) é o valor oficial da célula normativa; o sistema não cria alternativas divergentes.'
   ];
 
   dbInfo.forEach((item, idx) => {
-    doc.text(item, margin, currentY + 5 + idx * 4.5);
+    doc.text(item, margin, currentY + 4 + idx * 3.8);
   });
 
-  currentY += 24;
+  currentY += 17;
 
   // FÓRMULAS MATEMÁTICAS
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
   doc.text('3. FÓRMULAS MATEMÁTICAS E REGRAS DE CÁLCULO', margin, currentY);
 
-  currentY += 4;
+  currentY += 3.5;
 
   const formulaRows = [
-    ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van*Ia + Vbn*Ib + Vcn*Ic ou S = sqrt(3)*V_media*I_media / 1000'],
-    ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (I_fase / I_nominal) x 100; Limite térmico do transformador governado pelo pico'],
-    ['FDTP — fórmula exata PRODIST Módulo 8', 'beta=(Vab^4+Vbc^4+Vca^4)/(Vab^2+Vbc^2+Vca^2)^2; FD=100xsqrt((1-sqrt(3-6beta))/(1+sqrt(3-6beta)))'],
-    ['Desbalanço de corrente (triagem BT)', '100 x máximo |I_fase - I_media| / I_media (Orientativo para balanceamento NDU 006/007)'],
-    ['Perdas no cobre sob carga', 'Pk(I) = Pk,75 x [(Ia^2 + Ib^2 + Ic^2) / (3 x I_nominal^2)] (Física das perdas Joule)'],
-    ['Rendimento estimado sob carga', 'eta = Pativa / (Pativa + P0 + Pk,calculada) x 100']
+    ['Potência aparente trifásica (IEEE Std 1459)', 'S = Van·Ia + Vbn·Ib + Vcn·Ic   ou   S = √3 · V_méd · I_méd / 1000  (kVA)'],
+    ['Carregamento por fase e pico (NBR 5356-7 / NDU 006)', 'Carga Fase (%) = (I_fase / I_nominal) × 100; Limite governado pelo pico da fase mais carregada'],
+    ['FDTP — fórmula exata PRODIST Módulo 8', 'β = (Vab⁴ + Vbc⁴ + Vca⁴) / (Vab² + Vbc² + Vca²)²;  FDTP = 100 × √((1 - √(3 - 6β)) / (1 + √(3 - 6β)))'],
+    ['Desbalanço de corrente (triagem BT)', 'Desvio (%) = 100 × máx |I_fase - I_média| / I_média (Orientativo para balanceamento NDU 006/007 — Limiar: 15%)'],
+    ['Perdas no cobre sob carga', 'Pk(I) = Pk,75 × [(Ia² + Ib² + Ic²) / (3 × I_nominal²)] (Física das perdas Joule)'],
+    ['Rendimento estimado sob carga', 'η = [P_ativa / (P_ativa + P0 + Pk(I))] × 100']
   ];
 
   autoTable(doc, {
     startY: currentY,
     margin: { left: margin, right: margin },
-    head: [['Métrica Calculada', 'Fórmula Equação Utilizada']],
+    head: [['Métrica Calculada', 'Fórmula / Equação Matemática Utilizada']],
     body: formulaRows,
     theme: 'striped',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 }
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, cellPadding: 1.2 },
+    columnStyles: {
+      0: { cellWidth: 54, fontStyle: 'bold' },
+      1: { cellWidth: 128 }
+    }
   });
 
   // Assinatura e Parecer Técnico
   // @ts-ignore
-  currentY = doc.lastAutoTable.finalY + 8;
+  currentY = doc.lastAutoTable.finalY + 6;
 
   // 4. PARECER TÉCNICO / OBSERVAÇÕES DE CAMPO DO ELETRICISTA
   if (initialData.technicalNotes?.trim()) {
     const textLines = doc.splitTextToSize(initialData.technicalNotes.trim(), pageWidth - 2 * margin - 8);
-    const boxHeight = Math.max(20, textLines.length * 4.2 + 10);
+    const boxHeight = Math.max(18, textLines.length * 3.8 + 8);
 
-    if (currentY + boxHeight + 40 > pageHeight) {
-      doc.addPage();
+    if (currentY + boxHeight + 25 > pageHeight) {
+      doc.addPage('a4', 'p');
       currentY = 28;
       drawHeader('PARECER TÉCNICO E OBSERVAÇÕES DE CAMPO', doc.getNumberOfPages());
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
     doc.text('4. PARECER TÉCNICO / OBSERVAÇÕES DE CAMPO DO ELETRICISTA', margin, currentY);
-    currentY += 4;
+    currentY += 3.5;
 
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(203, 213, 225);
     doc.roundedRect(margin, currentY, pageWidth - 2 * margin, boxHeight, 2, 2, 'FD');
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(30, 41, 59);
-    doc.text(textLines, margin + 4, currentY + 6);
+    doc.text(textLines, margin + 4, currentY + 5);
 
-    currentY += boxHeight + 8;
+    currentY += boxHeight + 6;
   }
 
   // ==========================================
@@ -828,7 +877,7 @@ export async function generateTransformerDiagnosticPdf({
   if (photos && photos.length > 0) {
     const validPhotos = photos.slice(0, 15);
     validPhotos.forEach((photo, idx) => {
-      doc.addPage();
+      doc.addPage('a4', 'p');
       const pageNum = doc.getNumberOfPages();
       drawHeader(`ANEXO FOTOGRÁFICO: FOTO ${idx + 1} DE ${validPhotos.length}`, pageNum);
 
@@ -905,16 +954,18 @@ export async function generateTransformerDiagnosticPdf({
   const totalDocPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalDocPages; i++) {
     doc.setPage(i);
+    const curPWidth = doc.internal.pageSize.getWidth();
+    const curPHeight = doc.internal.pageSize.getHeight();
     doc.setFillColor(241, 245, 249);
-    doc.rect(0, pageHeight - 12, pageWidth, 12, 'F');
+    doc.rect(0, curPHeight - 12, curPWidth, 12, 'F');
 
     doc.setTextColor(100, 116, 139);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.text('Grupo Energisa', margin, pageHeight - 5);
+    doc.text('Grupo Energisa', margin, curPHeight - 5);
     doc.setFont('helvetica', 'normal');
-    doc.text(' — Laudo Pericial — Normas ANEEL PRODIST Mód 8 / NDU / ETU / NBR 5440', margin + 22, pageHeight - 5);
-    doc.text(`Página ${i} de ${totalDocPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
+    doc.text(' — Laudo Pericial — Normas ANEEL PRODIST Mód 8 / NDU / ETU / NBR 5440', margin + 22, curPHeight - 5);
+    doc.text(`Página ${i} de ${totalDocPages}`, curPWidth - margin, curPHeight - 5, { align: 'right' });
   }
 
   // Save / Download PDF
