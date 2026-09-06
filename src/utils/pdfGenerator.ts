@@ -544,14 +544,28 @@ export async function generateTransformerDiagnosticPdf({
     { p: 'C', curr: analysis.avgIc, ld: analysis.loadingPercentC || 0 }
   ].sort((a, b) => b.ld - a.ld);
 
+  const pba = analysis.phaseBalanceAnalysis;
+
   const summaryLines = [
-    `• RESUMO GERAL DO ESTADO DO TRANSFORMADOR:`,
-    `  Condição Operacional: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA CRÍTICA TRIFÁSICA') : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`,
-    `  Tensão e Qualidade PRODIST Módulo 8: Tensão média medida de ${analysis.overallAvgPhasePhaseV} V (Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
-    `  Eficiência sob Carga: ${analysis.calculatedEfficiencyPercent}% | Perdas Totais Calculadas: ${analysis.totalCalculatedLossW} W (Perdas no Ferro P0: ${analysis.estimatedIronLossW} W + Perdas no Cobre Pk: ${analysis.estimatedCopperLossW} W).`,
-    `  TAP em Operação e Ajuste: ${analysis.recommendedTap}. ${analysis.tapAdjustmentAdvice}`,
-    `  Proteção Primária Recomendada: ${analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Sem elo correspondente no banco'} (Norma NDU/ETU).`
+    `• RESUMO GERAL DO ESTADO OPERACIONAL (NDU 006 / NBR 5356-7):`,
+    `  Condição: ${(analysis.maxPhaseLoadingPercent || 0) > 100 ? (analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `SOBRECARGA CRÍTICA NA FASE ${analysis.criticalPhase}` : 'SOBRECARGA CRÍTICA TRIFÁSICA') : analysis.loadingCondition.replace('_', ' ')} (Pico: ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% | ${analysis.maxKvaMeasured} kVA medidos | Corrente Nominal: ${analysis.nominalCurrentSecondaryA} A).`,
+    `  Tensão Secundária PRODIST Módulo 8: Tensão média de ${analysis.overallAvgPhasePhaseV} V (Conforme / Status: ${analysis.prodist.voltageStatus} — ${analysis.prodist.voltageClassificationText}).`,
+    `  Proteção Primária Recomendada: ${analysis.recommendedFuse ? `Elo Fusível ${analysis.recommendedFuse.fuseCode}` : 'Elo 5H'} (Norma NDU/ETU — ${transformer.primaryVoltageV / 1000} kV / ${transformer.powerKva} kVA).`
   ];
+
+  if (pba) {
+    summaryLines.push(
+      `• DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO:`,
+      pba.phasesWithinNominal.length > 0
+        ? `  Fases dentro do nominal (≤ 100%): ${pba.phasesWithinNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')}.`
+        : `  Fases dentro do nominal: Nenhuma (todas operando acima de 100% da capacidade nominal de ${pba.nominalCurrentA} A).`,
+      pba.phasesExceedingNominal.length > 0
+        ? `  Fases fora do nominal / sobrecarga (> 100%): ${pba.phasesExceedingNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')}.`
+        : `  Fases em sobrecarga: Nenhuma.`,
+      `  Carregamento projetado após balanceamento perfeito: ${pba.postBalancingLoadingPercent}% (${pba.postBalancingCurrentA} A médios por fase).`,
+      `  Parecer de Remanejamento: ${pba.verdict}`
+    );
+  }
 
   if (isUnbalanced) {
     summaryLines.push(
@@ -559,19 +573,6 @@ export async function generateTransformerDiagnosticPdf({
       `  Desvio de carga de ${unbPercent}% excede o limiar normativo de 15%.`,
       `  Fases anômalas: Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).`,
       `  Recomendação: Remanejamento imediato de ramais e cargas na rede secundária para evitar aquecimento assimétrico e fusão prematura de elos fusíveis.`
-    );
-  }
-
-  if ((analysis.maxPhaseLoadingPercent || 0) > 100) {
-    const isCriticalPhase = analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO';
-    summaryLines.push(
-      `• ALERTA DE SOBRECARGA CRÍTICA (NDU 006 / NBR 5356-7):`,
-      isCriticalPhase
-        ? `  ATENÇÃO: A Fase ${analysis.criticalPhase} opera a ${analysis.maxPhaseLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A nominais).`
-        : `  ATENÇÃO: O transformador opera a ${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% da capacidade nominal (${analysis.nominalCurrentSecondaryA} A nominais).`,
-      isCriticalPhase
-        ? `  Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador. É recomendada a redistribuição imediata das cargas secundárias da Fase ${analysis.criticalPhase} para as demais fases.`
-        : `  Sobrecargas elevadas causam aquecimento excessivo e envelhecimento acelerado do transformador. É recomendado o remanejamento de carga ou aumento de capacidade nominal.`
     );
   }
 

@@ -276,4 +276,19 @@ export interface DiagnosticAnalysis {
   recommendedFuse: FuseRecommendation | null;
   recommendedTap: string;
   tapAdjustmentAdvice: string;
+
+  // Análise de Fases e Simulação de Balanceamento Secundário (NDU 006 / NBR 5356-7)
+  phaseBalanceAnalysis?: PhaseBalanceAnalysis;
 }
+
+export interface PhaseBalanceAnalysis {
+  nominalCurrentA: number;
+  phasesWithinNominal: Array<{ phase: 'A' | 'B' | 'C'; current: number; loadingPercent: number }>;
+  phasesExceedingNominal: Array<{ phase: 'A' | 'B' | 'C'; current: number; loadingPercent: number }>;
+  postBalancingCurrentA: number;
+  postBalancingLoadingPercent: number;
+  willBeWithinNominalAfterBalancing: boolean;
+  verdict: string;
+  recommendedNextCapacityKva?: number;
+}
+

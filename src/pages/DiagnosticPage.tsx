@@ -108,12 +108,12 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
           </span>
         </div>
 
-        <div className="w-full overflow-x-auto flex justify-center bg-slate-50 dark:bg-slate-950 p-2 sm:p-4 rounded-lg border border-slate-200 dark:border-slate-800 transition-colors duration-200">
+        <div className="w-full flex justify-center items-center overflow-hidden bg-slate-50 dark:bg-slate-950 p-2 sm:p-4 rounded-lg border border-slate-200 dark:border-slate-800 transition-colors duration-200">
           <HexagonalDiagram
             measurements={measurements}
             selectedTransformer={selectedTransformer}
-            width={1100}
-            height={680}
+            width={1200}
+            height={848}
             theme={theme}
             onCanvasRendered={onHexCanvasRendered}
           />

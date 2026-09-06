@@ -9,40 +9,40 @@ interface TransformerSelectorProps {
   onChangeInitialData?: (updated: InitialDiagnosticData) => void;
 }
 
-// Opções Normativas Energisa ETU-109.2 (Tabela 16)
+// Opções Normativas Energisa ETU-109.2 (Tabela 16) - Rótulos estritamente com os valores
 const TRIFASICO_POWERS = [15, 30, 45, 75, 112.5, 150, 225, 300];
 const MONOFASICO_POWERS = [5, 10, 15, 25, 37.5, 50];
 
 const TRIFASICO_PRIMARY_VOLTAGES = [
-  { value: 13800, label: '13.800 V (13,8 kV — Padrão Energisa)' },
-  { value: 34500, label: '34.500 V (34,5 kV)' },
-  { value: 11400, label: '11.400 V (11,4 kV)' },
-  { value: 22000, label: '22.000 V (22,0 kV)' }
+  { value: 13800, label: '13.800 V' },
+  { value: 34500, label: '34.500 V' },
+  { value: 11400, label: '11.400 V' },
+  { value: 22000, label: '22.000 V' }
 ];
 
 const MONOFASICO_PRIMARY_VOLTAGES = [
-  { value: 19919, label: '19.919 V (19,9 kV)' },
-  { value: 13800, label: '13.800 V (13,8 kV)' },
-  { value: 12702, label: '12.702 V (12,7 kV)' },
-  { value: 7967, label: '7.967 V (7,97 kV — 13,8 kV MRT)' },
-  { value: 6582, label: '6.582 V (6,58 kV — 11,4 kV MRT)' }
+  { value: 19919, label: '19.919 V' },
+  { value: 13800, label: '13.800 V' },
+  { value: 12702, label: '12.702 V' },
+  { value: 7967, label: '7.967 V' },
+  { value: 6582, label: '6.582 V' }
 ];
 
-// Níveis de Tensão Secundária do Grupo Energisa (PRODIST Módulo 8)
+// Níveis de Tensão Secundária do Grupo Energisa (PRODIST Módulo 8) - Rótulos estritamente com os valores
 const ENERGISA_SECONDARY_FF_VOLTAGES = [
-  { value: 220, label: '220 V (Padrão Principal Energisa 220/127 V)' },
-  { value: 380, label: '380 V (Padrão 380/220 V)' },
-  { value: 240, label: '240 V (Rede 240/120 V)' },
-  { value: 254, label: '254 V (Rede 254/127 V)' },
-  { value: 440, label: '440 V (Rede 440/220 V)' }
+  { value: 220, label: '220 V' },
+  { value: 380, label: '380 V' },
+  { value: 240, label: '240 V' },
+  { value: 254, label: '254 V' },
+  { value: 440, label: '440 V' }
 ];
 
 const ENERGISA_SECONDARY_FN_VOLTAGES = [
-  { value: 127, label: '127 V (Padrão Principal Energisa)' },
-  { value: 220, label: '220 V (Padrão para Rede 380 V)' },
-  { value: 110, label: '110 V (Rede 220/110 V)' },
-  { value: 115, label: '115 V (Rede 230/115 V)' },
-  { value: 120, label: '120 V (Rede 240/120 V)' }
+  { value: 127, label: '127 V' },
+  { value: 220, label: '220 V' },
+  { value: 110, label: '110 V' },
+  { value: 115, label: '115 V' },
+  { value: 120, label: '120 V' }
 ];
 
 export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
@@ -216,7 +216,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               )}
               {powerList.map((p) => (
                 <option key={p} value={p}>
-                  {p.toLocaleString('pt-BR')} kVA {p === 112.5 ? '★ (Padrão NDU/ETU)' : ''}
+                  {p.toLocaleString('pt-BR')} kVA
                 </option>
               ))}
             </select>

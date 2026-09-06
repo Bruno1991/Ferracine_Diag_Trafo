@@ -1,4 +1,14 @@
-import { SingleMeasurement, TransformerSpec, DiagnosticAnalysis, ProdistStatus, FuseRecommendation, PhaseType, TransformerType, MeasurementCycleMode } from '../types';
+import {
+  SingleMeasurement,
+  TransformerSpec,
+  DiagnosticAnalysis,
+  ProdistStatus,
+  FuseRecommendation,
+  PhaseType,
+  TransformerType,
+  MeasurementCycleMode,
+  PhaseBalanceAnalysis
+} from '../types';
 import { classifyProdistVoltage, findFuseInOfflineDatabase, getDiagnosticRuleValue } from './sqliteAndSplitLoader';
 
 type MeasurementField = keyof Pick<
@@ -863,6 +873,61 @@ export function performFullDiagnosticAnalysis(
     dataQuality
   );
 
+  // -------------------------------------------------------------
+  // ANÁLISE DE FASES E SIMULAÇÃO DE BALANCEAMENTO SECUNDÁRIO
+  // (NDU 006 / NDU 007 / ABNT NBR 5356-7)
+  // -------------------------------------------------------------
+  const roundedNominalCurrentA = Math.round(nominalCurrentSecondaryA * 10) / 10;
+  
+  const phaseDetailList: Array<{ phase: 'A' | 'B' | 'C'; current: number; loadingPercent: number }> = isTri
+    ? [
+        { phase: 'A', current: Math.round(avgIa * 10) / 10, loadingPercent: Math.round(loadingPercentA * 10) / 10 },
+        { phase: 'B', current: Math.round(avgIb * 10) / 10, loadingPercent: Math.round(loadingPercentB * 10) / 10 },
+        { phase: 'C', current: Math.round(avgIc * 10) / 10, loadingPercent: Math.round(loadingPercentC * 10) / 10 }
+      ]
+    : [
+        { phase: 'A', current: Math.round(avgIa * 10) / 10, loadingPercent: Math.round(loadingPercentA * 10) / 10 },
+        { phase: 'B', current: Math.round(avgIb * 10) / 10, loadingPercent: Math.round(loadingPercentB * 10) / 10 }
+      ];
+
+  const phasesWithinNominal = phaseDetailList.filter((p) => p.loadingPercent <= 100.0);
+  const phasesExceedingNominal = phaseDetailList.filter((p) => p.loadingPercent > 100.0);
+
+  // Simulação de balanceamento perfeito (equalização pura das correntes medidas)
+  const totalCurrentSum = isTri ? (avgIa + avgIb + avgIc) : (avgIa + avgIb);
+  const numPhases = isTri ? 3 : 2;
+  const postBalancingCurrentA = Math.round((totalCurrentSum / numPhases) * 10) / 10;
+  const postBalancingLoadingPercent = roundedNominalCurrentA > 0
+    ? Math.round(((postBalancingCurrentA / roundedNominalCurrentA) * 100) * 10) / 10
+    : 0;
+
+  const willBeWithinNominalAfterBalancing = postBalancingLoadingPercent <= 100.0;
+
+  // Próxima potência normalizada (base Energisa ETU-109.2)
+  const normPowers = isTri ? [15, 30, 45, 75, 112.5, 150, 225, 300] : [5, 10, 15, 25, 37.5, 50];
+  const nextPowerCandidate = normPowers.find((p) => p > transformer.powerKva && (transformer.powerKva > 0 ? (postBalancingCurrentA / ((p * 1000) / (isTri ? Math.sqrt(3) * nominalSecV : nominalSecV))) <= 1.0 : false))
+    || normPowers.find((p) => p > transformer.powerKva);
+
+  let balanceVerdict = '';
+  if (postBalancingLoadingPercent === 0) {
+    balanceVerdict = 'Aguardando registro de medições para simulação.';
+  } else if (willBeWithinNominalAfterBalancing) {
+    balanceVerdict = `SIM, FICARÁ DENTRO DO NOMINAL (${postBalancingLoadingPercent}%). O balanceamento de carga entre as fases na rede secundária reduzirá a corrente para ${postBalancingCurrentA} A médios por fase, eliminando a sobrecarga sem necessidade de troca do transformador.`;
+  } else {
+    balanceVerdict = `NÃO FICARÁ DENTRO DO NOMINAL (${postBalancingLoadingPercent}%). Mesmo com a redistribuição e balanceamento perfeito entre as fases, o transformador continuará sobrecarregado operando a ${postBalancingLoadingPercent}% (${postBalancingCurrentA} A médios para capacidade nominal de ${roundedNominalCurrentA} A). É necessária a transferência/alívio de carga para circuito vizinho ou aumento de capacidade do transformador (Upgrade recomendado para ${nextPowerCandidate || 'potência superior'} kVA).`;
+  }
+
+  const phaseBalanceAnalysis: PhaseBalanceAnalysis = {
+    nominalCurrentA: roundedNominalCurrentA,
+    phasesWithinNominal,
+    phasesExceedingNominal,
+    postBalancingCurrentA,
+    postBalancingLoadingPercent,
+    willBeWithinNominalAfterBalancing,
+    verdict: balanceVerdict,
+    recommendedNextCapacityKva: nextPowerCandidate
+  };
+
   return {
     avgVan: Math.round(avgVan * 10) / 10,
     avgVbn: Math.round(avgVbn * 10) / 10,
@@ -910,6 +975,7 @@ export function performFullDiagnosticAnalysis(
     thermalCorrectionFactorKt: Math.round(thermalCorrectionFactorKt * 1000) / 1000,
     recommendedFuse,
     recommendedTap,
-    tapAdjustmentAdvice
+    tapAdjustmentAdvice,
+    phaseBalanceAnalysis
   };
 }

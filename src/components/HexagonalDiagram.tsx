@@ -13,8 +13,8 @@ interface HexagonalDiagramProps {
 export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
   measurements,
   selectedTransformer,
-  width = 1100,
-  height = 680,
+  width = 1200,
+  height = 848,
   theme = 'light',
   onCanvasRendered
 }) => {
