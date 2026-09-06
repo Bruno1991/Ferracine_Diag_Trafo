@@ -914,7 +914,7 @@ export function performFullDiagnosticAnalysis(
   } else if (willBeWithinNominalAfterBalancing) {
     balanceVerdict = `SIM, FICARÁ DENTRO DO NOMINAL (${postBalancingLoadingPercent}%). O balanceamento de carga entre as fases na rede secundária reduzirá a corrente para ${postBalancingCurrentA} A médios por fase, eliminando a sobrecarga sem necessidade de troca do transformador.`;
   } else {
-    balanceVerdict = `NÃO FICARÁ DENTRO DO NOMINAL (${postBalancingLoadingPercent}%). Mesmo com a redistribuição e balanceamento perfeito entre as fases, o transformador continuará sobrecarregado operando a ${postBalancingLoadingPercent}% (${postBalancingCurrentA} A médios para capacidade nominal de ${roundedNominalCurrentA} A). É necessária a transferência/alívio de carga para circuito vizinho ou aumento de capacidade do transformador (Upgrade recomendado para ${nextPowerCandidate || 'potência superior'} kVA).`;
+    balanceVerdict = `NÃO FICARÁ DENTRO DO NOMINAL (${postBalancingLoadingPercent}%). Mesmo com a redistribuição e balanceamento perfeito entre as fases, o transformador continuará sobrecarregado operando a ${postBalancingLoadingPercent}% da sua capacidade nominal (${postBalancingCurrentA} A médios para capacidade nominal de ${roundedNominalCurrentA} A).`;
   }
 
   const phaseBalanceAnalysis: PhaseBalanceAnalysis = {

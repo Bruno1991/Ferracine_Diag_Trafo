@@ -58,48 +58,6 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       </div>
 
-      {/* Qualidade e coerência dos dados de entrada */}
-      {!isAmedir && (
-        <div className={`p-3 rounded-lg border space-y-2 ${
-          analysis.dataQuality.status === 'INCONSISTENTE'
-            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800'
-            : analysis.dataQuality.status === 'ALERTA'
-            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800'
-            : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800'
-        }`}>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase">
-            <AlertOctagon className="w-4 h-4" />
-            <span>
-              Qualidade dos dados: {analysis.dataQuality.status} — {
-                analysis.cycleMode === '1s'
-                  ? 'ciclo 1 segundo (modo de teste)'
-                  : analysis.cycleMode === '5s'
-                  ? 'ciclo 5 segundos (modo de teste)'
-                  : analysis.cycleMode === '5m'
-                  ? 'ciclo 5 minutos'
-                  : analysis.dataQuality.isInstantaneous
-                    ? 'Medição Instantânea (10 minutos pós-fechamento)'
-                    : 'ciclo 10 minutos (operação de fato)'
-              }
-            </span>
-          </div>
-          {analysis.dataQuality.issues.length === 0 ? (
-            <p className="text-[11px] font-mono">Nenhuma inconsistência detectada nas medições informadas.</p>
-          ) : (
-            <div className="space-y-1.5 pt-1">
-              {analysis.dataQuality.issues.map((issue) => (
-                <p key={issue.code} className="text-[11px] font-mono leading-tight">
-                  <span className={`font-bold mr-1 ${issue.severity === 'CRITICAL' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                    [{issue.severity === 'CRITICAL' ? 'CRÍTICO' : 'ALERTA'}]
-                  </span>
-                  <strong>{issue.title}:</strong> {issue.message}
-                </p>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Alerta de Desequilíbrio de Carga na Rede BT */}
       {hasUnbalance && (
         <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-3 rounded-lg space-y-1.5">
@@ -135,7 +93,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
                       </span>
                     ) : (
                       <span className="text-red-800 dark:text-red-300">
-                        ⚠ ATENÇÃO PERICIAL: Mesmo realizando o balanceamento perfeito entre as fases, o transformador continuará sobrecarregado operando a <strong>{pba.postBalancingLoadingPercent}%</strong> da sua capacidade nominal ({pba.postBalancingCurrentA} A médios por fase). É mandatória a redistribuição de ramais para trafo vizinho ou substituição por equipamento de {pba.recommendedNextCapacityKva || 150} kVA.
+                        ⚠ ATENÇÃO PERICIAL: Mesmo realizando o balanceamento perfeito entre as fases, o transformador continuará sobrecarregado operando a <strong>{pba.postBalancingLoadingPercent}%</strong> da sua capacidade nominal ({pba.postBalancingCurrentA} A médios por fase).
                       </span>
                     )}
                   </div>
