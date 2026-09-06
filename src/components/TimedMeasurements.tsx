@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Timer, Unlock, Play, Pause, Trash2, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Timer, Play, RotateCcw, Trash2, Clock, CheckCircle2, AlertCircle, Zap } from 'lucide-react';
 import { MeasurementCycleMode, SingleMeasurement, TransformerSpec } from '../types';
 import { getMissingMeasurementFields, processSingleMeasurement } from '../utils/electricalCalculations';
 
@@ -31,6 +31,8 @@ function formatTimer(secs: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+const STORAGE_TIMER_KEY = 'ferracine_active_countdown';
+
 export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
   measurements,
   onChangeMeasurement,
@@ -44,122 +46,219 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
 }) => {
   const isTri = selectedTransformer.phaseType === 'TRIFASICO';
 
-  // Estados de liberação de cada medição (M1, M2, M3)
-  // TODAS as células iniciam estritamente ocultas, exceto se já foram validadas/registradas anteriormente (draft)
+  // Estado de liberação individual de cada célula (M1, M2, M3)
+  // Iniciam desbloqueadas apenas se já possuem dados gravados / restaurados do rascunho
   const [unlocked, setUnlocked] = useState<boolean[]>(() => [
-    Boolean(measurements[0]?.isRecorded),
-    Boolean(measurements[1]?.isRecorded),
-    Boolean(measurements[2]?.isRecorded)
+    Boolean(measurements[0]?.isRecorded || (measurements[0]?.van || 0) > 0 || (measurements[0]?.vab || 0) > 0),
+    Boolean(measurements[1]?.isRecorded || (measurements[1]?.van || 0) > 0 || (measurements[1]?.vab || 0) > 0),
+    Boolean(measurements[2]?.isRecorded || (measurements[2]?.van || 0) > 0 || (measurements[2]?.vab || 0) > 0)
   ]);
 
-  // Se receber restauração de rascunho onde medições já foram gravadas, ou limpeza geral
-  useEffect(() => {
-    const allClean = measurements.every(
-      (m) => !m.isRecorded && (m.van || 0) === 0 && (m.vab || 0) === 0 && (m.ia || 0) === 0
-    );
-    if (allClean) {
-      setUnlocked([false, false, false]);
-      setCountdownTarget(0);
-      setIsTimerRunning(false);
-      return;
-    }
+  // Identifica qual célula deve ser a próxima a ser medida / aguardando cronômetro
+  const activeTargetIndex = unlocked[0]
+    ? measurements.length >= 2 && !unlocked[1]
+      ? 1
+      : measurements.length === 3 && !unlocked[2]
+      ? 2
+      : null
+    : 0;
 
-    setUnlocked((prev) => [
-      prev[0] || Boolean(measurements[0]?.isRecorded),
-      prev[1] || Boolean(measurements[1]?.isRecorded),
-      prev[2] || Boolean(measurements[2]?.isRecorded)
-    ]);
-  }, [measurements]);
-
-  // Cronômetro Central
-  // countdownTarget: 0 para M1 (pós-fechamento), 1 para M2, 2 para M3, ou null se nenhum ativo
-  const getInitialTarget = (): number | null => {
-    if (!measurements[0]?.isRecorded) return 0;
-    if (measurements.length >= 2 && !measurements[1]?.isRecorded) return 1;
-    if (measurements.length === 3 && !measurements[2]?.isRecorded) return 2;
-    return null;
-  };
-
-  const [countdownTarget, setCountdownTarget] = useState<number | null>(getInitialTarget);
   const [timerSeconds, setTimerSeconds] = useState<number>(() => getCycleDurationSeconds(cycleMode));
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   const [validationMsg, setValidationMsg] = useState<{ index: number; text: string; isError: boolean } | null>(null);
 
-  // Quando o usuário altera o ciclo e o timer não estiver rodando, ajusta os segundos
+  // Refs para controle temporal absoluto e background
+  const targetEndTimeRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<any>(null);
+  const workerRef = useRef<Worker | null>(null);
+
+  // Efeito para ajustar o tempo inicial quando o modo de ciclo for alterado e o timer estiver parado
   const prevCycleModeRef = useRef<MeasurementCycleMode>(cycleMode);
   useEffect(() => {
     if (prevCycleModeRef.current !== cycleMode) {
       prevCycleModeRef.current = cycleMode;
       if (!isTimerRunning) {
         setTimerSeconds(getCycleDurationSeconds(cycleMode));
+        targetEndTimeRef.current = null;
+        try {
+          localStorage.removeItem(STORAGE_TIMER_KEY);
+        } catch {
+          // ignore
+        }
       }
     }
   }, [cycleMode, isTimerRunning]);
 
-  // Efeito do Contador Regressivo
-  useEffect(() => {
-    let interval: any = null;
-    if (isTimerRunning && timerSeconds > 0) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev - 1);
-      }, 1000);
-    } else if (isTimerRunning && timerSeconds <= 0) {
-      setIsTimerRunning(false);
-      if (countdownTarget !== null) {
-        // Desbloqueia a medição alvo
-        const target = countdownTarget;
-        setUnlocked((prev) => {
-          const updated = [...prev];
-          updated[target] = true;
-          return updated;
-        });
-        setCountdownTarget(null);
-
-        // Garante que isLocked fique false na medição desbloqueada
-        if (measurements[target]) {
-          onChangeMeasurement(target, {
-            ...measurements[target],
-            isLocked: false
-          });
-        }
-      }
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timerSeconds, countdownTarget, measurements, onChangeMeasurement]);
-
-  // Controles do Cronômetro Central
-  const handleStartTimer = () => {
-    if (timerSeconds <= 0) {
-      setTimerSeconds(getCycleDurationSeconds(cycleMode));
-    }
-    if (countdownTarget === null) {
-      if (!unlocked[0]) setCountdownTarget(0);
-      else if (measurements.length >= 2 && !unlocked[1]) setCountdownTarget(1);
-      else if (measurements.length === 3 && !unlocked[2]) setCountdownTarget(2);
-      else setCountdownTarget(0);
-    }
-    setIsTimerRunning(true);
-  };
-
-  const handleStopTimer = () => {
-    setIsTimerRunning(false);
-  };
-
-  const handleBypassUnlockNow = () => {
-    setIsTimerRunning(false);
-    const target = countdownTarget ?? (!unlocked[0] ? 0 : (!unlocked[1] && measurements.length >= 2) ? 1 : (!unlocked[2] && measurements.length === 3) ? 2 : 0);
+  // Função para liberar a medição alvo quando o tempo expira
+  const unlockTargetMeasurement = useCallback((targetIdx: number) => {
     setUnlocked((prev) => {
       const updated = [...prev];
-      updated[target] = true;
+      updated[targetIdx] = true;
       return updated;
     });
-    setCountdownTarget(null);
 
-    if (measurements[target]) {
-      onChangeMeasurement(target, {
-        ...measurements[target],
+    if (measurements[targetIdx]) {
+      onChangeMeasurement(targetIdx, {
+        ...measurements[targetIdx],
         isLocked: false
       });
+    }
+
+    setIsTimerRunning(false);
+    targetEndTimeRef.current = null;
+    try {
+      localStorage.removeItem(STORAGE_TIMER_KEY);
+    } catch {
+      // ignore
+    }
+
+    // Libera Wake Lock se houver
+    if (wakeLockRef.current) {
+      try {
+        wakeLockRef.current.release();
+      } catch {
+        // ignore
+      }
+      wakeLockRef.current = null;
+    }
+
+    // Prepara o timer com o valor padrão para o próximo ciclo
+    setTimerSeconds(getCycleDurationSeconds(cycleMode));
+  }, [cycleMode, measurements, onChangeMeasurement]);
+
+  // Função central de sincronização temporal (Tick & Retorno de segundo plano)
+  const syncTimerState = useCallback(() => {
+    if (!targetEndTimeRef.current) return;
+    const now = Date.now();
+    const remaining = Math.max(0, Math.ceil((targetEndTimeRef.current - now) / 1000));
+
+    if (remaining <= 0) {
+      const currentTarget = activeTargetIndex ?? 0;
+      unlockTargetMeasurement(currentTarget);
+    } else {
+      setTimerSeconds(remaining);
+    }
+  }, [activeTargetIndex, unlockTargetMeasurement]);
+
+  // Gerenciamento de Web Worker inline em Blob para tick em segundo plano
+  useEffect(() => {
+    const workerScript = `
+      let interval = null;
+      self.onmessage = function(e) {
+        if (e.data === 'start') {
+          if (interval) clearInterval(interval);
+          interval = setInterval(function() {
+            self.postMessage('tick');
+          }, 500);
+        } else if (e.data === 'stop') {
+          if (interval) clearInterval(interval);
+          interval = null;
+        }
+      };
+    `;
+
+    try {
+      const blob = new Blob([workerScript], { type: 'application/javascript' });
+      const worker = new Worker(URL.createObjectURL(blob));
+      workerRef.current = worker;
+
+      worker.onmessage = (e) => {
+        if (e.data === 'tick') {
+          syncTimerState();
+        }
+      };
+
+      return () => {
+        worker.terminate();
+        workerRef.current = null;
+      };
+    } catch {
+      return undefined;
+    }
+  }, [syncTimerState]);
+
+  // Listener para sincronização imediata em segundo plano / tela bloqueada
+  useEffect(() => {
+    const handleResume = () => {
+      syncTimerState();
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('pageshow', handleResume);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('pageshow', handleResume);
+    };
+  }, [syncTimerState]);
+
+  // Fallback com setInterval na thread principal
+  useEffect(() => {
+    let mainInterval: any = null;
+    if (isTimerRunning) {
+      mainInterval = setInterval(() => {
+        syncTimerState();
+      }, 500);
+    }
+    return () => {
+      if (mainInterval) clearInterval(mainInterval);
+    };
+  }, [isTimerRunning, syncTimerState]);
+
+  // Iniciar Contador
+  const handleStartTimer = (cellIndex: number) => {
+    const duration = timerSeconds > 0 ? timerSeconds : getCycleDurationSeconds(cycleMode);
+    const end = Date.now() + duration * 1000;
+    targetEndTimeRef.current = end;
+    setTimerSeconds(duration);
+    setIsTimerRunning(true);
+
+    // Persiste no localStorage para resistir a reloads ou fechamentos acidentais
+    try {
+      localStorage.setItem(STORAGE_TIMER_KEY, JSON.stringify({ cellIndex, end }));
+    } catch {
+      // ignore
+    }
+
+    // Inicia worker
+    if (workerRef.current) {
+      workerRef.current.postMessage('start');
+    }
+
+    // Requisita Wake Lock de tela se disponível
+    if ('wakeLock' in navigator && (navigator as any).wakeLock?.request) {
+      (navigator as any).wakeLock.request('screen').then((lock: any) => {
+        wakeLockRef.current = lock;
+      }).catch(() => {});
+    }
+  };
+
+  // Parar Contador: RESETA para o valor inicial do ciclo (NÃO pausa)
+  const handleStopAndResetTimer = () => {
+    setIsTimerRunning(false);
+    targetEndTimeRef.current = null;
+    const defaultDuration = getCycleDurationSeconds(cycleMode);
+    setTimerSeconds(defaultDuration);
+
+    try {
+      localStorage.removeItem(STORAGE_TIMER_KEY);
+    } catch {
+      // ignore
+    }
+
+    if (workerRef.current) {
+      workerRef.current.postMessage('stop');
+    }
+
+    if (wakeLockRef.current) {
+      try {
+        wakeLockRef.current.release();
+      } catch {
+        // ignore
+      }
+      wakeLockRef.current = null;
     }
   };
 
@@ -252,7 +351,7 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     onChangeMeasurement(measIndex, processed);
   };
 
-  // Botão "VALIDAR DADOS": valida as grandezas da célula atual e, se houver próximo teste, dispara o cronômetro para liberar a próxima célula!
+  // Botão "VALIDAR DADOS": valida as grandezas da célula atual e, se houver próximo teste, prepara o cronômetro para o próximo ciclo!
   const handleValidateAndProceed = (measIndex: number) => {
     const meas = measurements[measIndex];
     if (!meas) return;
@@ -283,14 +382,14 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     // Se houver próxima medição na campanha que ainda não está desbloqueada:
     const nextIndex = measIndex + 1;
     if (nextIndex < measurements.length && !unlocked[nextIndex]) {
-      setCountdownTarget(nextIndex);
       const cycleSecs = getCycleDurationSeconds(cycleMode);
       setTimerSeconds(cycleSecs);
-      setIsTimerRunning(true);
+      // Dispara automaticamente a contagem para a próxima medição
+      handleStartTimer(nextIndex);
     } else if (nextIndex >= measurements.length) {
       // Concluiu todos os testes da campanha
-      setCountdownTarget(null);
       setIsTimerRunning(false);
+      targetEndTimeRef.current = null;
       onAllCompleted?.();
     }
   };
@@ -304,10 +403,8 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
     ? '5 MINUTOS'
     : '10 MINUTOS';
 
-  const visibleCount = measurements.filter((_, idx) => unlocked[idx]).length;
-
   return (
-    <div className="bg-white dark:bg-slate-900 rounded border border-slate-300 dark:border-slate-800 p-4 shadow-xs space-y-4">
+    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-4 shadow-xs space-y-4">
       {/* Cabeçalho do Módulo */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
         <div className="flex items-center gap-2">
@@ -317,67 +414,46 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES - INTERVALO DE {cycleLabel})
+                3. MEDIÇÕES TEMPORIZADAS (1 A 3 TESTES — INTERVALO DE {cycleLabel})
               </h2>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                ({measurements.length} medição{measurements.length > 1 ? 'ões' : ''})
+                ({measurements.length} teste{measurements.length > 1 ? 's' : ''})
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Coleta de tensões e correntes — a 1ª medição ocorre pós-fechamento do transformador. As células permanecem ocultas e surgem apenas ao término de cada cronômetro.
+              O cronômetro opera diretamente no espaço de cada célula. A célula surge imediatamente ao término da contagem, mantida ativa mesmo com tela bloqueada.
             </p>
           </div>
         </div>
       </div>
 
-      {/* PAINEL DE PRÉ-CONFIGURAÇÃO DO TESTE & CRONÔMETRO CENTRAL */}
+      {/* PAINEL DE CONFIGURAÇÃO DE TESTES E INTERVALO */}
       <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2.5">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pb-2.5 border-b border-slate-200 dark:border-slate-700/80">
-          {/* 1. SELETOR DE QUANTIDADE DE TESTES - BOTÕES COMPACTOS */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          {/* 1. SELETOR DE QUANTIDADE DE TESTES */}
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider block">
               1. QUANTIDADE DE TESTES (1 A 3 MEDIÇÕES)
             </label>
             <div className="grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleSetCount(1)}
-                className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
-                  measurements.length === 1
-                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
-                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <span>1 TESTE</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSetCount(2)}
-                className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
-                  measurements.length === 2
-                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
-                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <span>2 TESTES</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSetCount(3)}
-                className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
-                  measurements.length === 3
-                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
-                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <span>3 TESTES</span>
-              </button>
+              {[1, 2, 3].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => handleSetCount(num)}
+                  className={`h-7 px-2 rounded text-xs font-bold font-mono transition cursor-pointer flex items-center justify-center ${
+                    measurements.length === num
+                      ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
+                      : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>{num} {num === 1 ? 'TESTE' : 'TESTES'}</span>
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* 2. SELETOR DE INTERVALO DE CICLO - BOTÕES COMPACTOS & RÓTULO PROVISÓRIO */}
+          {/* 2. SELETOR DE INTERVALO DE CICLO */}
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider block">
               2. INTERVALO DE CICLO TEMPORIZADO
@@ -422,400 +498,371 @@ export const TimedMeasurements: React.FC<TimedMeasurementsProps> = ({
             </div>
           </div>
         </div>
-
-        {/* 3. CRONÔMETRO CENTRAL E CONTROLES INTEGRADOS */}
-        <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-xs">
-          <div className="flex items-center gap-3">
-            {/* Display Digital do Contador: Fundo Claro no tema Light, Fundo Escuro no tema Dark */}
-            <div className="bg-amber-50 dark:bg-slate-950 text-amber-800 dark:text-amber-400 font-mono font-extrabold text-2xl py-1 px-3.5 rounded shadow-inner border border-amber-300 dark:border-slate-800 tracking-widest flex items-center gap-2">
-              <Timer className={`w-5 h-5 ${isTimerRunning ? 'text-amber-600 dark:text-amber-400 animate-pulse' : 'text-amber-700/60 dark:text-slate-500'}`} />
-              <span>{formatTimer(timerSeconds)}</span>
-            </div>
-
-            {/* Status Descritivo */}
-            <div className="space-y-0.5">
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono">
-                {isTimerRunning
-                  ? `CRONÔMETRO EM ANDAMENTO — LIBERANDO ${(countdownTarget ?? 0) + 1}ª CÉLULA`
-                  : countdownTarget !== null
-                  ? `CRONÔMETRO PRONTO — PARA ${(countdownTarget ?? 0) + 1}ª CÉLULA`
-                  : 'CAMPANHA DE MEDIÇÕES TEMPORIZADAS'}
-              </div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                {isTimerRunning ? (
-                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block"></span>
-                    Contagem regressiva em andamento... A célula surgirá ao zerar.
-                  </span>
-                ) : countdownTarget !== null ? (
-                  <span>Clique em "INICIAR CONTADOR" para disparar o tempo e liberar a célula.</span>
-                ) : (
-                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Célula liberada para inserção e validação de dados.
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* BOTÕES DE CONTROLE JUNTO DO CRONÔMETRO */}
-          <div className="flex items-center gap-2 flex-wrap justify-end w-full sm:w-auto">
-            {!isTimerRunning ? (
-              <button
-                type="button"
-                onClick={handleStartTimer}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>INICIAR CONTADOR</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleStopTimer}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
-              >
-                <Pause className="w-3.5 h-3.5" />
-                <span>PARAR CONTADOR</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleBypassUnlockNow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
-              title="Liberar a célula imediatamente sem aguardar o cronômetro zerar"
-            >
-              <Unlock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span>LIBERAR AGORA</span>
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* SE NENHUMA CÉLULA ESTIVER LIBERADA AINDA (TODAS OCULTAS ATÉ TÉRMINO DO 1º CONTADOR) */}
-      {!unlocked[0] && (
-        <div className="p-6 sm:p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center space-y-3">
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/60 rounded-full border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400">
-            <Clock className="w-7 h-7 animate-pulse" />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">
-              CAMPANHA DE MEDIÇÕES TEMPORIZADAS (CÉLULAS OCULTAS)
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md font-mono">
-              Todas as células estão ocultas. A 1ª Célula de Medição surgirá automaticamente assim que o primeiro cronômetro ({cycleLabel}) terminar, pós-fechamento do transformador.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 pt-1 flex-wrap justify-center">
-            {!isTimerRunning ? (
-              <button
-                type="button"
-                onClick={handleStartTimer}
-                className="flex items-center gap-1.5 px-4 py-2 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
-              >
-                <Play className="w-4 h-4" />
-                <span>INICIAR CONTADOR (1º CICLO)</span>
-              </button>
-            ) : (
-              <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/50 px-3 py-1.5 rounded border border-amber-200 dark:border-amber-800">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping inline-block"></span>
-                Contagem em andamento... A 1ª célula surgirá ao zerar o tempo.
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleBypassUnlockNow}
-              className="flex items-center gap-1.5 px-3 py-2 rounded text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs transition cursor-pointer"
-              title="Liberar imediatamente a 1ª célula sem aguardar o tempo"
-            >
-              <Unlock className="w-3.5 h-3.5 text-blue-600" />
-              <span>LIBERAR 1ª CÉLULA AGORA</span>
-            </button>
-          </div>
-        </div>
-      )}
+      {/* GRADE DE CÉLULAS E CRONÔMETROS INTEGRADOS (1, 2 OU 3 SLOTS) */}
+      <div
+        className={`grid grid-cols-1 ${
+          measurements.length === 2 ? 'md:grid-cols-2' : measurements.length >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'
+        } gap-3`}
+      >
+        {measurements.map((meas, idx) => {
+          const measNum = idx + 1;
+          const isUnlocked = unlocked[idx];
+          const isCurrentActiveTarget = activeTargetIndex === idx;
 
-      {/* CARDS DE MEDIÇÃO: EXIBE SOMENTE AS CÉLULAS LIBERADAS */}
-      {unlocked[0] && (
-        <div className={`grid grid-cols-1 ${visibleCount === 2 ? 'md:grid-cols-2' : visibleCount >= 3 ? 'md:grid-cols-3' : 'max-w-2xl mx-auto'} gap-3`}>
-          {measurements.map((meas, idx) => {
-            // Células bloqueadas permanecem 100% ocultas até o término do contador
-            if (!unlocked[idx]) return null;
-            const measNum = idx + 1;
+          const offsetStr = idx === 0
+            ? `${cycleMode === '1s' ? '1 segundo' : cycleMode === '5s' ? '5 segundos' : cycleMode === '5m' ? '5 minutos' : '10 minutos'} pós-fechamento`
+            : idx === 1
+            ? `${cycleMode === '1s' ? '2 segundos' : cycleMode === '5s' ? '10 segundos' : cycleMode === '5m' ? '10 minutos' : '20 minutos'}`
+            : `${cycleMode === '1s' ? '3 segundos' : cycleMode === '5s' ? '15 segundos' : cycleMode === '5m' ? '15 minutos' : '30 minutos'}`;
 
-            // Rótulo da medição sem abreviações
-            const offsetStr = idx === 0
-              ? `${cycleMode === '1s' ? '1 segundo' : cycleMode === '5s' ? '5 segundos' : cycleMode === '5m' ? '5 minutos' : '10 minutos'} pós-fechamento`
-              : idx === 1
-              ? `${cycleMode === '1s' ? '2 segundos' : cycleMode === '5s' ? '10 segundos' : cycleMode === '5m' ? '10 minutos' : '20 minutos'}`
-              : `${cycleMode === '1s' ? '3 segundos' : cycleMode === '5s' ? '15 segundos' : cycleMode === '5m' ? '15 minutos' : '30 minutos'}`;
+          // CENÁRIO 1: CÉLULA AINDA NÃO LIBERADA PELO CRONÔMETRO
+          // Renderiza o CARD DE CRONÔMETRO GRANDE no exato espaço da célula
+          if (!isUnlocked) {
+            const isWaitingPrevious = idx > 0 && !unlocked[idx - 1];
 
             return (
               <div
-                key={meas.id}
-                className="rounded border p-3.5 relative flex flex-col justify-between shadow-xs bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700"
+                key={meas.id || idx}
+                className="rounded-lg border p-4 relative flex flex-col justify-between shadow-xs bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700 min-h-[420px]"
               >
-                <div className="space-y-2.5">
-                  {/* Header do Card */}
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono bg-blue-600 text-white">
-                        {measNum}
-                      </span>
-                      <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
-                        {measNum}ª Medição ({offsetStr})
-                      </h3>
-                    </div>
+                {/* Cabeçalho do Card */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono bg-amber-600 text-white">
+                      {measNum}
+                    </span>
+                    <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
+                      {measNum}ª Medição ({offsetStr})
+                    </h3>
+                  </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {/* Botão APAGAR DADOS DA CÉLULA */}
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> CÉLULA BLOQUEADA
+                  </span>
+                </div>
+
+                {/* CENTRO: DISPLAY GRANDE DO CRONÔMETRO */}
+                <div className="my-auto py-6 flex flex-col items-center justify-center text-center space-y-3">
+                  <div className="p-3 bg-amber-50 dark:bg-slate-950 rounded-full border border-amber-300 dark:border-slate-800 text-amber-700 dark:text-amber-400 shadow-inner">
+                    <Timer className={`w-8 h-8 ${isCurrentActiveTarget && isTimerRunning ? 'animate-pulse text-amber-600' : ''}`} />
+                  </div>
+
+                  {/* DISPLAY DIGITAL DO CRONÔMETRO: Fundo Claro no Light, Fundo Escuro no Dark */}
+                  <div className="w-full max-w-xs bg-amber-50 dark:bg-slate-950 border-2 border-amber-400 dark:border-amber-600/60 text-amber-900 dark:text-amber-300 font-mono font-black text-4xl sm:text-5xl py-3 px-4 rounded-xl shadow-inner tracking-widest flex items-center justify-center">
+                    <span>
+                      {isCurrentActiveTarget ? formatTimer(timerSeconds) : formatTimer(getCycleDurationSeconds(cycleMode))}
+                    </span>
+                  </div>
+
+                  {/* Status Informativo */}
+                  <div className="space-y-1 max-w-xs">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      {isCurrentActiveTarget && isTimerRunning
+                        ? 'Contagem Regressiva em Andamento'
+                        : isWaitingPrevious
+                        ? `Aguardando Validação da ${idx}ª Medição`
+                        : `Cronômetro da ${measNum}ª Medição Pronto`}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      {isCurrentActiveTarget && isTimerRunning ? (
+                        <span className="text-amber-700 dark:text-amber-400 flex items-center justify-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block"></span>
+                          A célula surgirá automaticamente ao zerar o tempo.
+                        </span>
+                      ) : isWaitingPrevious ? (
+                        'Preencha e valide a medição anterior para habilitar esta contagem.'
+                      ) : (
+                        'Clique em "INICIAR CONTADOR" para disparar o ciclo.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* BOTÕES DE CONTROLE NO ESPAÇO DA CÉLULA */}
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
+                  {isWaitingPrevious ? (
+                    <div className="w-full py-2 px-3 text-center text-xs font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 rounded border border-slate-200 dark:border-slate-700">
+                      AGUARDANDO MEDIÇÃO ANTERIOR
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* BOTÃO INICIAR CONTADOR */}
                       <button
                         type="button"
-                        onClick={() => handleClearCellData(idx)}
-                        title={`Apagar todos os dados da ${measNum}ª Medição`}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 transition cursor-pointer"
+                        onClick={() => handleStartTimer(idx)}
+                        disabled={isTimerRunning && isCurrentActiveTarget}
+                        className={`py-2 px-3 rounded text-xs font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer ${
+                          isTimerRunning && isCurrentActiveTarget
+                            ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-300 dark:border-slate-700'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20'
+                        }`}
                       >
-                        <Trash2 className="w-3 h-3" />
-                        <span>APAGAR DADOS</span>
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>INICIAR CONTADOR</span>
                       </button>
 
-                      {meas.isRecorded ? (
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> DADOS VALIDADOS
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> AGUARDANDO VALIDAÇÃO
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Inputs Tensões Fase-Neutro */}
-                  <div>
-                    <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
-                      TENSÕES FASE-NEUTRO [V]
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
-                        <input
-                          type="number"
-                          value={meas.van || ''}
-                          onChange={(e) => handleValueChange(idx, 'van', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
-                        <input
-                          type="number"
-                          value={meas.vbn || ''}
-                          onChange={(e) => handleValueChange(idx, 'vbn', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder="0"
-                        />
-                      </div>
-                      {isTri && (
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
-                          <input
-                            type="number"
-                            value={meas.vcn || ''}
-                            onChange={(e) => handleValueChange(idx, 'vcn', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Inputs Tensões Fase-Fase */}
-                  <div>
-                    <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
-                      TENSÕES FASE-FASE [V]
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
-                        <input
-                          type="number"
-                          value={meas.vab || ''}
-                          onChange={(e) => handleValueChange(idx, 'vab', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder="0"
-                        />
-                      </div>
-                      {isTri && (
-                        <>
-                          <div>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
-                            <input
-                              type="number"
-                              value={meas.vbc || ''}
-                              onChange={(e) => handleValueChange(idx, 'vbc', e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                              placeholder="0"
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
-                            <input
-                              type="number"
-                              value={meas.vca || ''}
-                              onChange={(e) => handleValueChange(idx, 'vca', e.target.value)}
-                              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                              placeholder="0"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Inputs Correntes */}
-                  <div>
-                    <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
-                      CORRENTES DE LINHA [A]
-                    </label>
-                    <div className={`grid ${isTri ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
-                        <input
-                          type="number"
-                          value={meas.ia || ''}
-                          onChange={(e) => handleValueChange(idx, 'ia', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
-                        <input
-                          type="number"
-                          value={meas.ib || ''}
-                          onChange={(e) => handleValueChange(idx, 'ib', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder="0"
-                        />
-                      </div>
-                      {isTri && (
-                        <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
-                          <input
-                            type="number"
-                            value={meas.ic || ''}
-                            onChange={(e) => handleValueChange(idx, 'ic', e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
-                        <input
-                          type="number"
-                          value={meas.in || ''}
-                          onChange={(e) => handleValueChange(idx, 'in', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
-                          placeholder="0"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rodapé do Card com Métricas Instantâneas Sem Abreviações */}
-                <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-400">
-                  <div>
-                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Tensão Média Fase-Fase</span>
-                    <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgVoltagePhasePhase} V</strong>
-                  </div>
-                  <div>
-                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Carregamento</span>
-                    <strong className={`text-xs ${meas.loadingPercent > 100 ? 'text-red-600 dark:text-red-400 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
-                      {meas.loadingPercent}%
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Corrente Média</span>
-                    <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgCurrent} A</strong>
-                  </div>
-                  <div>
-                    <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Potência Aparente Total</span>
-                    <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.totalKva} kVA</strong>
-                  </div>
-                </div>
-
-                {/* BOTÃO DE VALIDAÇÃO DOS DADOS DA CÉLULA */}
-                <div className="pt-2.5 mt-2 border-t border-slate-200 dark:border-slate-700/80 space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleValidateAndProceed(idx)}
-                    className={`w-full py-2 px-3 rounded text-xs font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer ${
-                      meas.isRecorded
-                        ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                    <span>
-                      {meas.isRecorded
-                        ? 'DADOS VALIDADOS (CLIQUE PARA REVALIDAR)'
-                        : idx + 1 < measurements.length
-                        ? 'VALIDAR DADOS'
-                        : 'VALIDAR DADOS E CONCLUIR'}
-                    </span>
-                  </button>
-
-                  {validationMsg && validationMsg.index === idx && (
-                    <div
-                      className={`p-2 rounded text-[11px] font-mono flex items-start gap-1.5 ${
-                        validationMsg.isError
-                          ? 'bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
-                          : 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                      }`}
-                    >
-                      {validationMsg.isError ? (
-                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      )}
-                      <span>{validationMsg.text}</span>
+                      {/* BOTÃO PARAR CONTADOR (RESETA O CRONÔMETRO) */}
+                      <button
+                        type="button"
+                        onClick={handleStopAndResetTimer}
+                        title="Para a contagem e reseta o cronômetro para o tempo inicial do ciclo"
+                        className="py-2 px-3 rounded text-xs font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer bg-rose-600 hover:bg-rose-700 text-white shadow-rose-700/20"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>PARAR CONTADOR</span>
+                      </button>
                     </div>
                   )}
                 </div>
               </div>
             );
-          })}
-        </div>
-      )}
+          }
 
-      {/* Aviso quando há medições pendentes para a campanha */}
-      {unlocked[0] && measurements.length > visibleCount && (
-        <div className="p-3 bg-blue-50/80 dark:bg-blue-950/50 rounded border border-blue-200 dark:border-blue-800 text-xs font-mono text-blue-800 dark:text-blue-300 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>
-              {isTimerRunning
-                ? `Aguarde o término do contador (${formatTimer(timerSeconds)}) para liberação da ${visibleCount + 1}ª Medição.`
-                : `A ${visibleCount + 1}ª Medição está oculta. Ela surgirá automaticamente após o término do contador regressivo iniciado ao validar os dados da medição anterior.`}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleBypassUnlockNow}
-            className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] transition cursor-pointer"
-          >
-            LIBERAR PRÓXIMA AGORA
-          </button>
-        </div>
-      )}
+          // CENÁRIO 2: CÉLULA LIBERADA PELO CRONÔMETRO
+          // Renderiza os campos de inserção de grandezas elétricas
+          return (
+            <div
+              key={meas.id || idx}
+              className="rounded-lg border p-3.5 relative flex flex-col justify-between shadow-xs bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700 min-h-[420px]"
+            >
+              <div className="space-y-2.5">
+                {/* Header do Card Liberado */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700 gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full font-bold text-xs flex items-center justify-center font-mono bg-blue-600 text-white">
+                      {measNum}
+                    </span>
+                    <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase">
+                      {measNum}ª Medição ({offsetStr})
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Botão APAGAR DADOS DA CÉLULA */}
+                    <button
+                      type="button"
+                      onClick={() => handleClearCellData(idx)}
+                      title={`Apagar todos os dados da ${measNum}ª Medição`}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>APAGAR DADOS</span>
+                    </button>
+
+                    {meas.isRecorded ? (
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> DADOS VALIDADOS
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> AGUARDANDO VALIDAÇÃO
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inputs Tensões Fase-Neutro */}
+                <div>
+                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
+                    TENSÕES FASE-NEUTRO [V]
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Van</span>
+                      <input
+                        type="number"
+                        value={meas.van || ''}
+                        onChange={(e) => handleValueChange(idx, 'van', e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbn</span>
+                      <input
+                        type="number"
+                        value={meas.vbn || ''}
+                        onChange={(e) => handleValueChange(idx, 'vbn', e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                    {isTri && (
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vcn</span>
+                        <input
+                          type="number"
+                          value={meas.vcn || ''}
+                          onChange={(e) => handleValueChange(idx, 'vcn', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inputs Tensões Fase-Fase */}
+                <div>
+                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
+                    TENSÕES FASE-FASE [V]
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vab</span>
+                      <input
+                        type="number"
+                        value={meas.vab || ''}
+                        onChange={(e) => handleValueChange(idx, 'vab', e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                    {isTri && (
+                      <>
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vbc</span>
+                          <input
+                            type="number"
+                            value={meas.vbc || ''}
+                            onChange={(e) => handleValueChange(idx, 'vbc', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Vca</span>
+                          <input
+                            type="number"
+                            value={meas.vca || ''}
+                            onChange={(e) => handleValueChange(idx, 'vca', e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inputs Correntes */}
+                <div>
+                  <label className="label-xs mb-1 block text-slate-600 dark:text-slate-400 font-bold">
+                    CORRENTES DE LINHA [A]
+                  </label>
+                  <div className={`grid ${isTri ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
+                    <div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ia</span>
+                      <input
+                        type="number"
+                        value={meas.ia || ''}
+                        onChange={(e) => handleValueChange(idx, 'ia', e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ib</span>
+                      <input
+                        type="number"
+                        value={meas.ib || ''}
+                        onChange={(e) => handleValueChange(idx, 'ib', e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                    {isTri && (
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Ic</span>
+                        <input
+                          type="number"
+                          value={meas.ic || ''}
+                          onChange={(e) => handleValueChange(idx, 'ic', e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">In (Neutro)</span>
+                      <input
+                        type="number"
+                        value={meas.in || ''}
+                        onChange={(e) => handleValueChange(idx, 'in', e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rodapé do Card com Métricas Instantâneas Sem Abreviações */}
+              <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-600 dark:text-slate-400">
+                <div>
+                  <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Tensão Média Fase-Fase</span>
+                  <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgVoltagePhasePhase} V</strong>
+                </div>
+                <div>
+                  <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Carregamento</span>
+                  <strong className={`text-xs ${meas.loadingPercent > 100 ? 'text-red-600 dark:text-red-400 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
+                    {meas.loadingPercent}%
+                  </strong>
+                </div>
+                <div>
+                  <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Corrente Média</span>
+                  <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.avgCurrent} A</strong>
+                </div>
+                <div>
+                  <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Potência Aparente Total</span>
+                  <strong className="text-slate-800 dark:text-slate-200 text-xs">{meas.totalKva} kVA</strong>
+                </div>
+              </div>
+
+              {/* BOTÃO DE VALIDAÇÃO DOS DADOS DA CÉLULA */}
+              <div className="pt-2.5 mt-2 border-t border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleValidateAndProceed(idx)}
+                  className={`w-full py-2 px-3 rounded text-xs font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer ${
+                    meas.isRecorded
+                      ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                  <span>
+                    {meas.isRecorded
+                      ? 'DADOS VALIDADOS (CLIQUE PARA REVALIDAR)'
+                      : idx + 1 < measurements.length
+                      ? 'VALIDAR DADOS'
+                      : 'VALIDAR DADOS E CONCLUIR'}
+                  </span>
+                </button>
+
+                {validationMsg && validationMsg.index === idx && (
+                  <div
+                    className={`p-2 rounded text-[11px] font-mono flex items-start gap-1.5 ${
+                      validationMsg.isError
+                        ? 'bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    }`}
+                  >
+                    {validationMsg.isError ? (
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    )}
+                    <span>{validationMsg.text}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
-

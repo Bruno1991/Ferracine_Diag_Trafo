@@ -9,6 +9,42 @@ interface TransformerSelectorProps {
   onChangeInitialData?: (updated: InitialDiagnosticData) => void;
 }
 
+// Opções Normativas Energisa ETU-109.2 (Tabela 16)
+const TRIFASICO_POWERS = [15, 30, 45, 75, 112.5, 150, 225, 300];
+const MONOFASICO_POWERS = [5, 10, 15, 25, 37.5, 50];
+
+const TRIFASICO_PRIMARY_VOLTAGES = [
+  { value: 13800, label: '13.800 V (13,8 kV — Padrão Energisa)' },
+  { value: 34500, label: '34.500 V (34,5 kV)' },
+  { value: 11400, label: '11.400 V (11,4 kV)' },
+  { value: 22000, label: '22.000 V (22,0 kV)' }
+];
+
+const MONOFASICO_PRIMARY_VOLTAGES = [
+  { value: 19919, label: '19.919 V (19,9 kV)' },
+  { value: 13800, label: '13.800 V (13,8 kV)' },
+  { value: 12702, label: '12.702 V (12,7 kV)' },
+  { value: 7967, label: '7.967 V (7,97 kV — 13,8 kV MRT)' },
+  { value: 6582, label: '6.582 V (6,58 kV — 11,4 kV MRT)' }
+];
+
+// Níveis de Tensão Secundária do Grupo Energisa (PRODIST Módulo 8)
+const ENERGISA_SECONDARY_FF_VOLTAGES = [
+  { value: 220, label: '220 V (Padrão Principal Energisa 220/127 V)' },
+  { value: 380, label: '380 V (Padrão 380/220 V)' },
+  { value: 240, label: '240 V (Rede 240/120 V)' },
+  { value: 254, label: '254 V (Rede 254/127 V)' },
+  { value: 440, label: '440 V (Rede 440/220 V)' }
+];
+
+const ENERGISA_SECONDARY_FN_VOLTAGES = [
+  { value: 127, label: '127 V (Padrão Principal Energisa)' },
+  { value: 220, label: '220 V (Padrão para Rede 380 V)' },
+  { value: 110, label: '110 V (Rede 220/110 V)' },
+  { value: 115, label: '115 V (Rede 230/115 V)' },
+  { value: 120, label: '120 V (Rede 240/120 V)' }
+];
+
 export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
   selectedTransformer,
   onSelectTransformer,
@@ -16,10 +52,10 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
   onChangeInitialData
 }) => {
   const phaseType = selectedTransformer.phaseType || 'TRIFASICO';
-  const powerKva = selectedTransformer.powerKva || '';
-  const primaryVoltageV = selectedTransformer.primaryVoltageV || '';
-  const secondaryVoltageV = selectedTransformer.secondaryVoltageV || '';
-  const secondaryNeutralV = selectedTransformer.secondaryNeutralV || '';
+  const powerKva = selectedTransformer.powerKva || 0;
+  const primaryVoltageV = selectedTransformer.primaryVoltageV || 0;
+  const secondaryVoltageV = selectedTransformer.secondaryVoltageV || 0;
+  const secondaryNeutralV = selectedTransformer.secondaryNeutralV || 0;
 
   const updateField = (patch: Partial<TransformerSpec>) => {
     const updated: TransformerSpec = {
@@ -27,13 +63,38 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
       ...patch,
       id: initialData?.transformerTag?.trim() || selectedTransformer.id || `TRAFO-${patch.powerKva ?? selectedTransformer.powerKva ?? 0}kVA`,
       brand: initialData?.transformerBrand ?? selectedTransformer.brand,
-      standardReference: 'Dados Básicos Coletados em Campo (Técnico)'
+      standardReference: 'Dados Básicos Coletados em Campo (Técnico / Energisa ETU-109.2)'
     };
     onSelectTransformer(updated);
   };
 
   const handlePhaseChange = (newPhase: PhaseType) => {
-    updateField({ phaseType: newPhase });
+    const defaultPower = newPhase === 'TRIFASICO' ? 112.5 : 15;
+    const defaultPrimary = newPhase === 'TRIFASICO' ? 13800 : 7967;
+    updateField({
+      phaseType: newPhase,
+      powerKva: defaultPower,
+      primaryVoltageV: defaultPrimary
+    });
+  };
+
+  // Listas de opções conforme a fase selecionada
+  const powerList = phaseType === 'TRIFASICO' ? TRIFASICO_POWERS : MONOFASICO_POWERS;
+  const primaryList = phaseType === 'TRIFASICO' ? TRIFASICO_PRIMARY_VOLTAGES : MONOFASICO_PRIMARY_VOLTAGES;
+
+  // Handler para troca de Tensão Secundária FF com auto-sugestão do FN correspondente
+  const handleSecondaryFfChange = (newFf: number) => {
+    let suggestedFn = secondaryNeutralV;
+    if (newFf === 220) suggestedFn = 127;
+    else if (newFf === 380) suggestedFn = 220;
+    else if (newFf === 440) suggestedFn = 220;
+    else if (newFf === 240) suggestedFn = 120;
+    else if (newFf === 254) suggestedFn = 127;
+
+    updateField({
+      secondaryVoltageV: newFf,
+      secondaryNeutralV: suggestedFn
+    });
   };
 
   return (
@@ -49,7 +110,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               <span>2. DADOS BÁSICOS DO TRANSFORMADOR</span>
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Preencha os dados básicos do equipamento coletados pelo técnico/eletricista em campo
+              Padronização Energisa ETU-109.2 e PRODIST Módulo 8 — selecione rapidamente sem necessidade de digitação
             </p>
           </div>
         </div>
@@ -87,7 +148,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
         </div>
       </div>
 
-      {/* 2. Dados Reais de Campo: Identificação e Localização */}
+      {/* 2. Dados Reais de Campo: Identificação e Localização (com letras maiúsculas travadas) */}
       <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-3">
         {initialData && onChangeInitialData && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pb-2.5 border-b border-slate-200 dark:border-slate-700/80">
@@ -97,12 +158,13 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
                 type="text"
                 value={initialData.transformerTag || ''}
                 onChange={(e) => {
-                  const val = e.target.value;
+                  const val = e.target.value.toUpperCase();
                   onChangeInitialData({ ...initialData, transformerTag: val });
                   updateField({ id: val || selectedTransformer.id });
                 }}
-                placeholder="Ex: PTCA0121"
-                className="w-full bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:bg-white dark:focus:bg-slate-950 focus:border-amber-500 focus:outline-none"
+                placeholder="EX: PTCA0121"
+                className="w-full uppercase bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-amber-900 dark:text-amber-200 focus:bg-white dark:focus:bg-slate-950 focus:border-amber-500 focus:outline-none tracking-wider"
+                style={{ textTransform: 'uppercase' }}
               />
             </div>
             <div>
@@ -111,12 +173,13 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
                 type="text"
                 value={initialData.transformerBrand || ''}
                 onChange={(e) => {
-                  const val = e.target.value;
+                  const val = e.target.value.toUpperCase();
                   onChangeInitialData({ ...initialData, transformerBrand: val });
                   updateField({ brand: val });
                 }}
-                placeholder="Ex: TRAEL, WEG, Romagnole"
-                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                placeholder="EX: TRAEL, WEG, ROMAGNOLE"
+                className="w-full uppercase bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none tracking-wider"
+                style={{ textTransform: 'uppercase' }}
               />
             </div>
             <div>
@@ -124,77 +187,102 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
               <input
                 type="text"
                 value={initialData.locationName || ''}
-                onChange={(e) => onChangeInitialData({ ...initialData, locationName: e.target.value })}
-                placeholder="Ex: CAC-03 (Cacoal - RO)"
-                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                onChange={(e) => {
+                  const val = e.target.value.toUpperCase();
+                  onChangeInitialData({ ...initialData, locationName: val });
+                }}
+                placeholder="EX: CAC-03 (CACOAL - RO)"
+                className="w-full uppercase bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none tracking-wider"
+                style={{ textTransform: 'uppercase' }}
               />
             </div>
           </div>
         )}
 
-        {/* 3. Grandezas Elétricas Básicas */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {/* Potência kVA */}
+        {/* 3. Grandezas Elétricas Básicas Selecionadas via Base Normativa Energisa ETU-109.2 / PRODIST */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {/* Potência kVA — Lista Normativa Energisa ETU-109.2 */}
           <div>
-            <label className="label-xs mb-1 block">POTÊNCIA NOMINAL (kVA)</label>
-            <input
-              type="number"
-              step="0.5"
+            <label className="label-xs mb-1 block text-slate-700 dark:text-slate-300 font-bold">
+              POTÊNCIA NOMINAL (kVA)
+            </label>
+            <select
               value={powerKva}
-              placeholder="Ex: 112.5"
-              onChange={(e) => {
-                const val = e.target.value === '' ? '' : Number(e.target.value);
-                const numV = val === '' ? 0 : val;
-                updateField({ powerKva: numV });
-              }}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
+              onChange={(e) => updateField({ powerKva: Number(e.target.value) })}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 dark:text-blue-300 focus:border-blue-500 focus:outline-none cursor-pointer"
+            >
+              {!powerList.includes(powerKva) && powerKva > 0 && (
+                <option value={powerKva}>{powerKva} kVA (Personalizado)</option>
+              )}
+              {powerList.map((p) => (
+                <option key={p} value={p}>
+                  {p.toLocaleString('pt-BR')} kVA {p === 112.5 ? '★ (Padrão NDU/ETU)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Tensão Primária */}
+          {/* Tensão Primária — Lista Normativa Energisa ETU-109.2 */}
           <div>
-            <label className="label-xs mb-1 block">TENSÃO PRIMÁRIA (V)</label>
-            <input
-              type="number"
-              step="100"
+            <label className="label-xs mb-1 block text-slate-700 dark:text-slate-300 font-bold">
+              TENSÃO PRIMÁRIA (V)
+            </label>
+            <select
               value={primaryVoltageV}
-              placeholder="Ex: 13800"
-              onChange={(e) => {
-                const val = e.target.value === '' ? '' : Number(e.target.value);
-                updateField({ primaryVoltageV: val === '' ? 0 : val });
-              }}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
+              onChange={(e) => updateField({ primaryVoltageV: Number(e.target.value) })}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 dark:text-blue-300 focus:border-blue-500 focus:outline-none cursor-pointer"
+            >
+              {!primaryList.some((item) => item.value === primaryVoltageV) && primaryVoltageV > 0 && (
+                <option value={primaryVoltageV}>{primaryVoltageV} V (Personalizado)</option>
+              )}
+              {primaryList.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Tensão Secundária F-F */}
+          {/* Tensão Secundária F-F — Grupo Energisa (PRODIST Módulo 8) */}
           <div>
-            <label className="label-xs mb-1 block">TENSÃO SECUNDÁRIA FASE-FASE (V)</label>
-            <input
-              type="number"
+            <label className="label-xs mb-1 block text-slate-700 dark:text-slate-300 font-bold">
+              TENSÃO SEC. FASE-FASE (V)
+            </label>
+            <select
               value={secondaryVoltageV}
-              placeholder="Ex: 220 ou 380"
-              onChange={(e) => {
-                const val = e.target.value === '' ? '' : Number(e.target.value);
-                updateField({ secondaryVoltageV: val === '' ? 0 : val });
-              }}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
+              onChange={(e) => handleSecondaryFfChange(Number(e.target.value))}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 dark:text-blue-300 focus:border-blue-500 focus:outline-none cursor-pointer"
+            >
+              {!ENERGISA_SECONDARY_FF_VOLTAGES.some((item) => item.value === secondaryVoltageV) && secondaryVoltageV > 0 && (
+                <option value={secondaryVoltageV}>{secondaryVoltageV} V (Personalizado)</option>
+              )}
+              {ENERGISA_SECONDARY_FF_VOLTAGES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Tensão Secundária F-N */}
+          {/* Tensão Secundária F-N — Grupo Energisa (PRODIST Módulo 8) */}
           <div>
-            <label className="label-xs mb-1 block">TENSÃO SECUNDÁRIA FASE-NEUTRO (V)</label>
-            <input
-              type="number"
+            <label className="label-xs mb-1 block text-slate-700 dark:text-slate-300 font-bold">
+              TENSÃO SEC. FASE-NEUTRO (V)
+            </label>
+            <select
               value={secondaryNeutralV}
-              placeholder="Ex: 127 ou 220"
-              onChange={(e) => {
-                const val = e.target.value === '' ? '' : Number(e.target.value);
-                updateField({ secondaryNeutralV: val === '' ? 0 : val });
-              }}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
+              onChange={(e) => updateField({ secondaryNeutralV: Number(e.target.value) })}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700 dark:text-blue-300 focus:border-blue-500 focus:outline-none cursor-pointer"
+            >
+              {!ENERGISA_SECONDARY_FN_VOLTAGES.some((item) => item.value === secondaryNeutralV) && secondaryNeutralV > 0 && (
+                <option value={secondaryNeutralV}>{secondaryNeutralV} V (Personalizado)</option>
+              )}
+              {ENERGISA_SECONDARY_FN_VOLTAGES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

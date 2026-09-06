@@ -416,9 +416,10 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
             <input
               type="text"
               value={initialData.cityState}
-              onChange={(e) => onChange({ ...initialData, cityState: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none pr-8"
-              placeholder="Cidade - UF"
+              onChange={(e) => onChange({ ...initialData, cityState: e.target.value.toUpperCase() })}
+              className="w-full uppercase bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none pr-8"
+              placeholder="CIDADE - UF"
+              style={{ textTransform: 'uppercase' }}
             />
             {initialData.utm?.latitude ? (
               <button
@@ -442,9 +443,10 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
           <input
             type="text"
             value={initialData.equipe || ''}
-            onChange={(e) => onChange({ ...initialData, equipe: e.target.value })}
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
-            placeholder="Nome ou código da equipe (opcional)"
+            onChange={(e) => onChange({ ...initialData, equipe: e.target.value.toUpperCase() })}
+            className="w-full uppercase bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-950 focus:border-blue-500 focus:outline-none"
+            placeholder="NOME OU CÓDIGO DA EQUIPE (OPCIONAL)"
+            style={{ textTransform: 'uppercase' }}
           />
         </div>
       </div>
@@ -502,9 +504,10 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
                 <input
                   type="text"
                   value={author.name}
-                  onChange={(e) => handleAuthorFieldChange(index, 'name', e.target.value)}
-                  placeholder={`Nome do ${author.role.toLowerCase()}`}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:border-blue-500 focus:outline-none"
+                  onChange={(e) => handleAuthorFieldChange(index, 'name', e.target.value.toUpperCase())}
+                  placeholder={`NOME DO ${author.role}`}
+                  className="w-full uppercase bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:border-blue-500 focus:outline-none"
+                  style={{ textTransform: 'uppercase' }}
                 />
               </div>
 
@@ -516,9 +519,10 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
                 <input
                   type="text"
                   value={author.matricula}
-                  onChange={(e) => handleAuthorFieldChange(index, 'matricula', e.target.value)}
-                  placeholder="Nº matrícula (opcional)"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-blue-500 focus:outline-none"
+                  onChange={(e) => handleAuthorFieldChange(index, 'matricula', e.target.value.toUpperCase())}
+                  placeholder="Nº MATRÍCULA (OPCIONAL)"
+                  className="w-full uppercase bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-blue-500 focus:outline-none"
+                  style={{ textTransform: 'uppercase' }}
                 />
               </div>
 
