@@ -1,6 +1,8 @@
 import React from 'react';
 import { BookOpen, CheckCircle2, Database, FileCode2, Scale, ShieldAlert } from 'lucide-react';
 import { FuseRecommendation, PhaseType } from '../types';
+import { formatKv } from '../utils/electricalCalculations';
+import { FormulaSvg } from './FormulaSvg';
 import {
   getDiagnosticRuleValue,
   getOfflineDatabaseStatus,
@@ -13,51 +15,65 @@ const phaseConfig: Array<{ phase: PhaseType; title: string; voltages: number[] }
   { phase: 'TRIFASICO', title: 'Transformador trifásico (3F) — tensão primária fase-fase', voltages: [11400, 13800, 22000, 34500] }
 ];
 
-function formatKv(voltageV: number): string {
-  return (voltageV / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 3 });
-}
-
 function formatFuseCode(code: string): string {
   return code.replace('.', ',').replace(/([HK])$/, ' $1');
 }
 
-function fuseAt(fuses: FuseRecommendation[], phase: PhaseType, powerKva: number, voltageV: number): FuseRecommendation | undefined {
-  return fuses.find((item) => item.phaseType === phase && Math.abs(item.powerKva - powerKva) < 0.001 && Math.abs(item.primaryVoltageV - voltageV) < 1);
-}
-
 export const NormsAndCalculationsView: React.FC = () => {
   const status = getOfflineDatabaseStatus();
+  const prodistLimit = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3.0);
+  const unbalanceLimit = getDiagnosticRuleValue('current_unbalance_alert_percent', 15.0);
   const fuses = getOfflineFuseRecommendations();
-  const table16Vegetal = fuses.filter((item) => item.oilType === 'VEGETAL');
   const voltageRanges = getOfflineProdistVoltageRanges();
-  const fdBt = getDiagnosticRuleValue('prodist_fd_limit_bt_percent', 3);
-  const fdMt = getDiagnosticRuleValue('prodist_fd_limit_mt_percent', 2);
-  const currentScreening = getDiagnosticRuleValue('current_unbalance_limit_percent', 15);
-  const generatedAt = status.generatedAt ? new Date(status.generatedAt).toLocaleString('pt-BR') : 'data não informada';
+
+  const table16Vegetal = fuses.filter((item) => item.oilType === 'VEGETAL');
+  const fuseAt = (rows: FuseRecommendation[], phase: PhaseType, power: number, voltage: number) =>
+    rows.find((item) => item.phaseType === phase && Math.abs(item.powerKva - power) < 0.001 && Math.abs(item.primaryVoltageV - voltage) < 1.0);
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-4">
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-blue-600" />
-          <div>
-            <h2 className="text-xs font-bold uppercase tracking-wider">Base normativa e base de cálculo de diagnóstico</h2>
-            <p className="text-[11px] text-slate-500 font-mono">Conteúdo lido do mesmo SQLite usado pelos cálculos offline</p>
+    <div className="space-y-6">
+      <section className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-300 dark:border-slate-800 space-y-3">
+        <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          Base Normativa e Regras de Cálculo Regulatórias
+        </h2>
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          Esta tela detalha os critérios oficiais aplicados no diagnóstico do aplicativo. As tabelas abaixo são carregadas do SQLite oficial e não utilizam tabelas embutidas provisórias no código.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-200 dark:border-slate-700">
+            <span className="text-[10px] text-slate-500 font-mono block">Origem dos Dados</span>
+            <strong className="text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5">
+              <Database className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              SQLite Relacional Ativo
+            </strong>
+          </div>
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-200 dark:border-slate-700">
+            <span className="text-[10px] text-slate-500 font-mono block">Limite FDTP (BT)</span>
+            <strong className="text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5">
+              <Scale className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              ≤ {prodistLimit.toFixed(1)}% (PRODIST Mód. 8)
+            </strong>
+          </div>
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-200 dark:border-slate-700">
+            <span className="text-[10px] text-slate-500 font-mono block">Alerta Desbalanceamento BT</span>
+            <strong className="text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              &gt; {unbalanceLimit.toFixed(1)}% (NDU 006 / 007)
+            </strong>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-          <CheckCircle2 className="w-3.5 h-3.5" /> SQLite v{status.schemaVersion} — {status.source}
-        </span>
-      </div>
+      </section>
 
-      <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] font-mono flex flex-wrap justify-between gap-2">
-        <span><Database className="w-4 h-4 inline mr-1 text-blue-600" />Banco gerado em {generatedAt}</span>
-        <span>{status.transformerCount} transformadores | {status.fuseCount} elos | {status.voltageRangeCount} faixas de tensão</span>
-      </div>
+      <section className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+        <h3 className="text-xs font-bold text-blue-800 dark:text-blue-300 uppercase flex items-center gap-2">
+          <Scale className="w-4 h-4" />1. ANEEL PRODIST Módulo 8 — Faixas de Tensão Padronizadas para Concessões do Grupo Energisa
+        </h3>
+        <p className="text-[11px] text-slate-600 dark:text-slate-300">
+          Valores regulatórios oficiais por tensão nominal e conexão (fase-fase ou fase-neutro) nas áreas de concessão do Grupo Energisa. O aplicativo rejeita leituras com desvio superior a 30% da faixa nominal como erro de medição do eletricista.
+        </p>
 
-      <section className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
-        <h3 className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase flex items-center gap-2"><Scale className="w-4 h-4" />1. PRODIST Módulo 8 — faixas cadastradas</h3>
-        <p className="text-[11px] text-slate-600 dark:text-slate-300">Os limites são valores absolutos por tensão nominal, não percentuais genéricos. FD95: BT {fdBt}% e MT {fdMt}%. O limiar de {currentScreening}% para corrente é triagem de engenharia do app, não limite regulatório PRODIST.</p>
         <div className="overflow-x-auto rounded border border-slate-200 dark:border-slate-700">
           <table className="w-full text-[11px] font-mono border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-800"><tr><th className="p-2 text-left">Sistema</th><th className="p-2">Ligação</th><th className="p-2">Nominal</th><th className="p-2">Adequada</th><th className="p-2">Precária (intervalo externo)</th><th className="p-2">Crítica</th></tr></thead>
@@ -85,7 +101,7 @@ export const NormsAndCalculationsView: React.FC = () => {
               <h4 className="text-[11px] font-bold uppercase">{title}</h4>
               <div className="overflow-x-auto rounded border border-slate-200 dark:border-slate-700">
                 <table className="w-full text-[11px] font-mono border-collapse">
-                  <thead className="bg-slate-100 dark:bg-slate-800"><tr><th className="p-2 text-left">Potência (kVA)</th>{voltages.map((voltage) => <th key={voltage} className="p-2 text-center">{formatKv(voltage)} kV</th>)}</tr></thead>
+                  <thead className="bg-slate-100 dark:bg-slate-800"><tr><th className="p-2 text-left">Potência (kVA)</th>{voltages.map((voltage) => <th key={voltage} className="p-2 text-center">{formatKv(voltage)}</th>)}</tr></thead>
                   <tbody>
                     {powers.map((power) => (
                       <tr key={power} className="border-t border-slate-200 dark:border-slate-700">
@@ -102,22 +118,73 @@ export const NormsAndCalculationsView: React.FC = () => {
             </div>
           );
         })}
-        <p className="text-[10px] text-slate-500 font-mono">Fonte exibida: ETU-109.2, Tabela 16, página 142 (óleo vegetal). O SQLite também mantém separadamente a Tabela 16 da ETU-109.1 para óleo mineral, usada automaticamente quando esse óleo é selecionado.</p>
       </section>
 
-      <section className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
-        <h3 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase flex items-center gap-2"><FileCode2 className="w-4 h-4" />3. Fórmulas efetivamente usadas pelo app</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
-          {[
-            ['Potência aparente trifásica', 'S = √3 × VFF,média × Imédia / 1000'],
-            ['Carregamento', 'Carga (%) = Smedida / Snominal × 100'],
-            ['FDTP — fórmula exata PRODIST', 'β=(Vab⁴+Vbc⁴+Vca⁴)/(Vab²+Vbc²+Vca²)²; FD=100×√((1−√(3−6β))/(1+√(3−6β)))'],
-            ['Desbalanço de corrente — triagem do app', '100 × máximo |Ifase−Imédia| / Imédia'],
-            ['Correção térmica', 'Kt = (Tk + Tóleo) / (Tk + 75 °C); Tk Cu=234,5 °C e Tk Al=225 °C'],
-            ['Rendimento estimado', 'η = Pativa / (Pativa + P0 + Pk,calc) × 100']
-          ].map(([name, formula]) => <div key={name} className="p-2.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"><strong>{name}</strong><div className="mt-1 p-1.5 rounded bg-slate-100 dark:bg-slate-950 font-mono text-emerald-800 dark:text-emerald-300">{formula}</div></div>)}
+      <section className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase flex items-center gap-2">
+            <FileCode2 className="w-4 h-4" />3. Fórmulas Matemáticas e Regras de Cálculo (Vetores SVG em Alta Resolução)
+          </h3>
+          <span className="text-[10px] font-mono text-slate-500">NDU 006 / NDU 007 / PRODIST Módulo 8 / IEEE 1459</span>
         </div>
-        <p className="text-[10px] text-slate-500">A triagem temporal do app usa o PRODIST. A curva ITIC não é declarada sem registrar a duração real dos eventos de afundamento/elevação.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>I. Corrente Nominal Trifásica (IN)</span>
+              <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">NDU 006 (pág. 178)</span>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
+              <FormulaSvg formula="in_trifasica" className="max-h-24" />
+            </div>
+            <p className="text-[11px] text-slate-500 font-mono">I = Potência (kVA) / [√3 × Tensão (kV)] = Potência (kVA) / [1,732 × Tensão (kV)]</p>
+          </div>
+
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>I. Corrente Nominal Monofásica (IN)</span>
+              <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">NDU 007 (pág. 189)</span>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
+              <FormulaSvg formula="in_monofasica" className="max-h-24" />
+            </div>
+            <p className="text-[11px] text-slate-500 font-mono">I = Potência (kVA) / Tensão (kV)</p>
+          </div>
+
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>II. Potência Aparente e Carregamento</span>
+              <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">IEEE Std 1459 / NBR 5356-7</span>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
+              <FormulaSvg formula="potencia_carregamento" className="max-h-28" />
+            </div>
+            <p className="text-[11px] text-slate-500 font-mono">S = (Van·Ia + Vbn·Ib + Vcn·Ic)/1000 | Carga Fase (%) = (Ifase / Inominal) × 100</p>
+          </div>
+
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>III. Fator de Desbalanço de Tensão (FDTP)</span>
+              <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">PRODIST Módulo 8 (Eq. 15 e 16)</span>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
+              <FormulaSvg formula="prodist_fdtp" className="max-h-28" />
+            </div>
+            <p className="text-[11px] text-slate-500 font-mono">β = (Vab⁴ + Vbc⁴ + Vca⁴)/(Vab² + Vbc² + Vca²)² | FDTP (%) = 100 × √((1 - √(3-6β))/(1 + √(3-6β)))</p>
+          </div>
+
+          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>IV. Desbalanço de Carga na Rede BT</span>
+              <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">NDU 006 / NDU 007</span>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
+              <FormulaSvg formula="desequilibrio_bt" className="max-h-24" />
+            </div>
+            <p className="text-[11px] text-slate-500 font-mono">Desvio (%) = 100 × máx|Ifase - Imédia| / Imédia (Limiar de triagem do app: 15%)</p>
+          </div>
+        </div>
+        <p className="text-[10px] text-slate-500">Cálculos e parametrizações regulatórias extraídas diretamente dos documentos normativos oficiais da Energisa (NDU 006, NDU 007, ETU-109) e ANEEL (PRODIST Módulo 8).</p>
       </section>
     </div>
   );

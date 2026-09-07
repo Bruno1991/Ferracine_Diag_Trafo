@@ -143,7 +143,7 @@ export function exportDiagnosticToExcel({
   // Sheet 3: Resultados_e_PRODIST
   const sheet3Data = [
     ['ANÁLISE DIAGNÓSTICA E NORMAS ANEEL', 'VALOR OBTIDO', 'CRITÉRIO / UNIDADE', 'DIAGNÓSTICO'],
-    ['Qualidade dos dados', analysis.dataQuality.status, `${analysis.dataQuality.issues.length} ocorrência(s)`, analysis.dataQuality.canIssueTapRecommendation ? 'Recomendação liberada' : 'TAP bloqueado'],
+    ['Qualidade dos dados', analysis.dataQuality.status, `${analysis.dataQuality.issues.length} ocorrência(s)`, analysis.dataQuality.canIssueReport ? 'Laudo liberado' : 'Dados incompletos'],
     ['Status Tensão PRODIST Módulo 8', `${analysis.overallAvgPhasePhaseV} V`, range ? `${range.adequateMinV} a ${range.adequateMaxV} V` : 'Faixa não encontrada', analysis.prodist.voltageStatus],
     ['Detalhamento de Tensão', analysis.prodist.voltageClassificationText, 'ANEEL Módulo 8', analysis.prodist.voltageStatus],
     ['Fator de Desbalanço FDTP', `${analysis.prodist.fdtpPercent} %`, `FDTP <= ${fdLimit}% (BT)`, analysis.prodist.unbalanceStatus],
@@ -151,12 +151,8 @@ export function exportDiagnosticToExcel({
     ['Carregamento de Pico por Fase', analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? `${analysis.maxPhaseLoadingPercent}% (Fase ${analysis.criticalPhase})` : `${analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}% (Trifásico)`, `Corrente Nominal = ${analysis.nominalCurrentSecondaryA} A`, analysis.loadingCondition.replace('_', ' ')],
     ['Condição de Carga (Térmica / NDU 006)', analysis.loadingCondition.replace('_', ' '), 'Análise Térmica NBR 5356-7', 'Operacional'],
     ['Elo Fusível Primário Recomendado', analysis.recommendedFuse?.fuseCode || 'N/A', analysis.recommendedFuse?.sourceDocument || 'Sem correspondência', analysis.recommendedFuse?.sourceTable || 'Verificar'],
-    ['Posição Recomendada para TAP', analysis.recommendedTap, 'Comutação Sob Carga/Sem Carga', 'Ajuste Recomendado'],
-    ['Diagnóstico de TAP', analysis.tapAdjustmentAdvice, 'Análise Tensão Secundária', 'Orientação'],
-    ['Perdas Estimadas no Cobre Pk (W)', analysis.estimatedCopperLossW, 'W', 'Sob Carga Medida'],
-    ['Perdas Estimadas no Ferro P0 (W)', analysis.estimatedIronLossW, 'W', 'Em Vazio'],
-    ['Perdas Totais Calculadas (W)', analysis.totalCalculatedLossW, 'W', 'P0 + Pk_calc'],
-    ['Eficiência Operacional Calculada (%)', analysis.calculatedEfficiencyPercent, '%', 'Rendimento Real']
+    ['Desbalanceamento de Corrente BT (%)', `${analysis.currentUnbalancePercent} %`, 'NDU 006 / NDU 007 (Limiar: 15%)', analysis.currentUnbalancePercent > 15 ? 'ALERTA DE DESEQUILÍBRIO' : 'ADEQUADO'],
+    ['Simulação Pós-Balanceamento', analysis.phaseBalanceAnalysis ? `${analysis.phaseBalanceAnalysis.postBalancingLoadingPercent}% (${analysis.phaseBalanceAnalysis.postBalancingCurrentA} A médios)` : 'N/A', 'Equalização entre Fases', analysis.phaseBalanceAnalysis?.willBeWithinNominalAfterBalancing ? 'DENTRO DO NOMINAL' : 'SOBRECARREGADO']
   ];
 
   const ws3 = XLSX.utils.aoa_to_sheet(sheet3Data);

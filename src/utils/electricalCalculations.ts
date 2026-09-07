@@ -5,7 +5,6 @@ import {
   ProdistStatus,
   FuseRecommendation,
   PhaseType,
-  TransformerType,
   MeasurementCycleMode,
   PhaseBalanceAnalysis
 } from '../types';
@@ -15,6 +14,13 @@ type MeasurementField = keyof Pick<
   SingleMeasurement,
   'van' | 'vbn' | 'vcn' | 'vab' | 'vbc' | 'vca' | 'ia' | 'ib' | 'ic'
 >;
+
+export function formatKv(voltageV: number): string {
+  if (!voltageV || voltageV <= 0) return '0 kV';
+  const kv = voltageV / 1000;
+  const formatted = parseFloat(kv.toFixed(3)).toString();
+  return `${formatted} kV`;
+}
 
 const FIELD_LABELS: Record<MeasurementField, string> = {
   van: 'Van', vbn: 'Vbn', vcn: 'Vcn',
@@ -62,62 +68,6 @@ function hasValidTransformerIdentity(transformer: TransformerSpec): boolean {
     transformer.primaryVoltageV > 0 &&
     transformer.secondaryVoltageV > 0
   );
-}
-
-
-
-/**
- * Calcula perdas em vazio (P0), perdas em carga (Pk) e eficiência nominal
- * a partir das características de placa inseridas pelo técnico
- */
-export function computeNominalLossesAndEfficiency(
-  powerKva: number,
-  phaseType: PhaseType,
-  category: TransformerType,
-  customP0?: number,
-  customPk?: number,
-  windingMaterial: 'ALUMINIO' | 'COBRE' = 'ALUMINIO'
-) {
-  let p0 = customP0 && customP0 > 0 ? customP0 : 0;
-  let pk = customPk && customPk > 0 ? customPk : 0;
-
-  if (p0 === 0 && powerKva > 0) {
-    if (phaseType === 'TRIFASICO') {
-      p0 = Math.round(5.5 * Math.pow(powerKva, 0.85));
-    } else {
-      p0 = Math.round(7.0 * Math.pow(powerKva, 0.75));
-    }
-    if (category === 'RECONDICIONADO' || category === 'USADO') {
-      p0 = Math.round(p0 * 1.2);
-    }
-  }
-
-  if (pk === 0 && powerKva > 0) {
-    const pkMult = windingMaterial === 'COBRE' ? 17.0 : 19.2;
-    if (phaseType === 'TRIFASICO') {
-      pk = Math.round(pkMult * Math.pow(powerKva, 0.88));
-    } else {
-      const pkMonoMult = windingMaterial === 'COBRE' ? 20.0 : 23.0;
-      pk = Math.round(pkMonoMult * Math.pow(powerKva, 0.82));
-    }
-    if (category === 'RECONDICIONADO' || category === 'USADO') {
-      pk = Math.round(pk * 1.15);
-    }
-  }
-
-  const totalLossW = p0 + pk;
-  const powerW = powerKva * 1000;
-  const pfNominal = 0.92;
-  const efficiencyPercent = powerW > 0
-    ? Number((((powerW * pfNominal) / (powerW * pfNominal + totalLossW)) * 100).toFixed(2))
-    : 0;
-
-  return {
-    noLoadLossW: p0,
-    loadLoss75cW: pk,
-    totalLossW,
-    efficiencyPercent
-  };
 }
 
 /**
@@ -554,94 +504,14 @@ function validateMeasurementData(
   );
 
   const hasCritical = uniqueIssues.some((issue) => issue.severity === 'CRITICAL');
-  const hasFatalMeasurementError = uniqueIssues.some((issue) =>
-    issue.severity === 'CRITICAL' && issue.code !== 'DESEQUILIBRIO_CORRENTE'
-  );
   const hasTrafo = hasValidTransformerIdentity(transformer);
-  const canIssueTap = !hasFatalMeasurementError && valid.length >= 1 && hasTrafo;
   const canIssueReport = valid.length >= 1 && hasTrafo;
   return {
     status: hasCritical ? 'INCONSISTENTE' : uniqueIssues.length > 0 ? 'ALERTA' : 'VALIDO',
     isInstantaneous: valid.length === 1,
     validMeasurementsCount: valid.length,
     issues: uniqueIssues,
-    canIssueTapRecommendation: canIssueTap,
     canIssueReport: canIssueReport
-  };
-}
-
-/**
- * Executa análise completa das 3 medições
- */
-function buildTapRecommendation(
-  transformer: TransformerSpec,
-  measuredSecondaryV: number,
-  dataQuality: DiagnosticAnalysis['dataQuality']
-): Pick<DiagnosticAnalysis, 'recommendedTap' | 'tapAdjustmentAdvice'> {
-  if (!dataQuality.canIssueTapRecommendation) {
-    return {
-      recommendedTap: 'RECOMENDACAO DE TAP BLOQUEADA',
-      tapAdjustmentAdvice: 'Corrija as inconsistencias criticas detectadas nos dados antes de alterar o TAP.'
-    };
-  }
-
-  // Obter tensões de TAP do transformador ou calcular padrão (+5%, +2.5%, Nominal, -2.5%, -5%)
-  let tapVoltages = transformer.tapVoltages;
-  if (!tapVoltages || Object.keys(tapVoltages).length === 0) {
-    const primV = transformer.primaryVoltageV || 13800;
-    tapVoltages = {
-      1: Math.round(primV * 1.05),
-      2: Math.round(primV * 1.025),
-      3: Math.round(primV),
-      4: Math.round(primV * 0.975),
-      5: Math.round(primV * 0.95)
-    };
-  }
-
-  const entries = Object.entries(tapVoltages)
-    .map(([position, voltage]) => ({ position: Number(position), voltage: Number(voltage) }))
-    .filter((entry) => Number.isInteger(entry.position) && entry.position > 0 && Number.isFinite(entry.voltage) && entry.voltage > 0)
-    .sort((a, b) => a.position - b.position);
-
-  const activeIndex = transformer.activeTapIndex && entries.some(e => e.position === transformer.activeTapIndex)
-    ? transformer.activeTapIndex
-    : entries.length >= 3 ? Math.ceil(entries.length / 2) : (entries[0]?.position || 1);
-
-  const active = entries.find((entry) => entry.position === activeIndex);
-  if (!active || measuredSecondaryV <= 0 || transformer.secondaryVoltageV <= 0) {
-    return {
-      recommendedTap: 'RECOMENDACAO DE TAP BLOQUEADA',
-      tapAdjustmentAdvice: 'Informe as tensoes de todas as posicoes e marque o TAP atualmente em operacao.'
-    };
-  }
-
-  const severity = { ADEQUADA: 0, PRECARIA: 1, CRITICA: 2 } as const;
-  const candidates = entries.map((entry) => {
-    const predictedVoltage = measuredSecondaryV * active.voltage / entry.voltage;
-    const classification = classifyProdistVoltage(predictedVoltage, transformer.secondaryVoltageV, 'FF');
-    const ratio = predictedVoltage / transformer.secondaryVoltageV;
-    const status: 'ADEQUADA' | 'PRECARIA' | 'CRITICA' = classification?.status || (
-      ratio >= 0.93 && ratio <= 1.05 ? 'ADEQUADA' : 'CRITICA'
-    );
-    return {
-      ...entry,
-      predictedVoltage,
-      status,
-      error: Math.abs(predictedVoltage - transformer.secondaryVoltageV)
-    };
-  }).sort((a, b) => severity[a.status] - severity[b.status] || a.error - b.error || a.position - b.position);
-
-  const best = candidates[0];
-  const tapLabel = `TAP ${best.position} (${(best.voltage / 1000).toFixed(3)} kV)`;
-  if (best.position === active.position) {
-    return {
-      recommendedTap: `MANTER ${tapLabel}`,
-      tapAdjustmentAdvice: `O TAP ativo e a melhor posicao cadastrada. Tensao secundaria prevista: ${best.predictedVoltage.toFixed(1)} V (${best.status}).`
-    };
-  }
-  return {
-    recommendedTap: tapLabel,
-    tapAdjustmentAdvice: `Comutar do TAP ${active.position} (${(active.voltage / 1000).toFixed(3)} kV) para o TAP ${best.position}. Tensao secundaria estimada apos a comutacao: ${best.predictedVoltage.toFixed(1)} V (${best.status}). Confirmar procedimento, desenergizacao e regras de seguranca antes da intervencao.`
   };
 }
 
@@ -743,34 +613,26 @@ export function performFullDiagnosticAnalysis(
   // PRODIST
   let prodist = evaluateProdist(overallAvgPhasePhaseV, nominalSecV, maxFdtp);
 
-  // Material dos Enrolamentos & Correção Térmica de Perdas (ABNT NBR 5356 / NBR 5440)
   const windingMaterial: 'ALUMINIO' | 'COBRE' = transformer.windingMaterial || 'ALUMINIO';
-  // Constante de temperatura Tk (°C): Alumínio = 225.0 °C; Cobre = 234.5 °C
-  const thermalConstantTk = windingMaterial === 'COBRE' ? 234.5 : 225.0;
-  const opTempC = transformer.oilTempC && transformer.oilTempC > 0 ? transformer.oilTempC : 75;
-  // Fator de correção de temperatura para perdas em carga: Kt = (Tk + T_op) / (Tk + 75°C)
-  const thermalCorrectionFactorKt = (thermalConstantTk + opTempC) / (thermalConstantTk + 75);
+  const phaseType = transformer.phaseType || 'TRIFASICO';
 
-  // Perdas calculadas considerando a média quadrática das correntes de fase (Joule I²R):
-  const normLosses = computeNominalLossesAndEfficiency(transformer.powerKva, transformer.phaseType, 'USADO');
-  const baseNoLoadW = transformer.noLoadLossW && transformer.noLoadLossW > 0 ? transformer.noLoadLossW : normLosses.noLoadLossW;
-  const baseLoadLossW = transformer.loadLoss75cW && transformer.loadLoss75cW > 0 ? transformer.loadLoss75cW : normLosses.loadLoss75cW;
+  // Desbalanceamento de corrente nas fases da rede secundária (NDU 006 / NDU 007)
+  let currentUnbalancePercent = 0;
+  if (isTri) {
+    const iList = [avgIa, avgIb, avgIc].filter(i => i > 0);
+    if (iList.length === 3 && overallAvgCurrentA > 0) {
+      const maxDesvioI = Math.max(Math.abs(avgIa - overallAvgCurrentA), Math.abs(avgIb - overallAvgCurrentA), Math.abs(avgIc - overallAvgCurrentA));
+      currentUnbalancePercent = Math.round(((maxDesvioI / overallAvgCurrentA) * 100) * 10) / 10;
+    }
+  } else {
+    const iList = [avgIa, avgIb].filter(i => i > 0);
+    if (iList.length === 2 && overallAvgCurrentA > 0) {
+      const maxDesvioI = Math.max(Math.abs(avgIa - overallAvgCurrentA), Math.abs(avgIb - overallAvgCurrentA));
+      currentUnbalancePercent = Math.round(((maxDesvioI / overallAvgCurrentA) * 100) * 10) / 10;
+    }
+  }
 
-  const estimatedIronLossW = baseNoLoadW;
-  const currentRatioSquared = isTri
-    ? (Math.pow(avgIa, 2) + Math.pow(avgIb, 2) + Math.pow(avgIc, 2)) / (3 * Math.pow(nominalCurrentSecondaryA || 1, 2))
-    : (Math.pow(avgIa, 2) + Math.pow(avgIb, 2)) / (2 * Math.pow(nominalCurrentSecondaryA || 1, 2));
-
-  const estimatedCopperLossW = Math.round(baseLoadLossW * currentRatioSquared * thermalCorrectionFactorKt);
-  const totalCalculatedLossW = Math.round(estimatedIronLossW + estimatedCopperLossW);
-
-  const pf = validMeas.length > 0 ? validMeas[0].powerFactor || 0.92 : 0.92;
-  const activePowerW = avgKvaMeasured * 1000 * pf;
-  const calculatedEfficiencyPercent = (activePowerW + totalCalculatedLossW) > 0
-    ? Number(((activePowerW / (activePowerW + totalCalculatedLossW)) * 100).toFixed(2))
-    : (transformer.efficiencyPercent > 0 ? transformer.efficiencyPercent : normLosses.efficiencyPercent);
-
-  // Recomendação de Elo Fusível
+  // Recomendação de Elo Fusível Primário Oficial (Energisa ETU-109 Tabela 16)
   const recommendedFuse = findRecommendedFuse(
     transformer.primaryVoltageV,
     transformer.powerKva,
@@ -779,99 +641,6 @@ export function performFullDiagnosticAnalysis(
   );
 
   const dataQuality = validateMeasurementData(measurements, transformer, cycleMode);
-
-  // Phase Specific Validation Rules & Alerts
-  const phaseAlerts: DiagnosticAnalysis['phaseAlerts'] = [];
-  let voltageUnbalancePercentNema = 0;
-  let currentUnbalancePercent = 0;
-
-  const phaseType = transformer.phaseType || 'TRIFASICO';
-
-  if (phaseType === 'MONOFASICO') {
-    // 1. Monofásico: Ignore phase unbalance. Calculate FP = cos(θ). Alert if FP < 0.92.
-    validMeas.forEach((m) => {
-      let fp = m.powerFactor;
-      if (m.phaseAngleTheta !== undefined && m.phaseAngleTheta !== null) {
-        fp = Math.cos((m.phaseAngleTheta * Math.PI) / 180);
-      }
-      if (fp > 0 && fp < 0.92) {
-        const fpFormatted = fp.toFixed(2);
-        if (!phaseAlerts.some(a => a.type === 'ALERTA_BAIXO_FATOR_POTENCIA')) {
-          phaseAlerts.push({
-            type: 'ALERTA_BAIXO_FATOR_POTENCIA',
-            message: `Alerta: Baixo Fator de Potência detectado (FP = ${fpFormatted} < 0.92). Requer intervenção para correção de reativos.`,
-            severity: 'WARNING'
-          });
-        }
-      }
-    });
-  } else {
-    // 3. Trifásico:
-    // a) Angular unbalance: diff between phases 120° ± 1.5° (118.5° to 121.5°)
-    validMeas.forEach((m) => {
-      const angleA = m.angleA !== undefined ? m.angleA : 0;
-      const angleB = m.angleB !== undefined ? m.angleB : 120;
-      const angleC = m.angleC !== undefined ? m.angleC : 240;
-
-      let diffAB = Math.abs(angleB - angleA);
-      let diffBC = Math.abs(angleC - angleB);
-      let diffCA = Math.abs((angleA + 360) - angleC);
-
-      const isAbInvalid = diffAB < 118.5 || diffAB > 121.5;
-      const isBcInvalid = diffBC < 118.5 || diffBC > 121.5;
-      const isCaInvalid = diffCA < 118.5 || diffCA > 121.5;
-
-      if (isAbInvalid || isBcInvalid || isCaInvalid) {
-        if (!phaseAlerts.some(a => a.type === 'ERRO_ANGULO_TRIFASICO')) {
-          phaseAlerts.push({
-            type: 'ERRO_ANGULO_TRIFASICO',
-            message: `Erro de Ângulo Trifásico: Deslocamento angular entre fases (${diffAB.toFixed(1)}°, ${diffBC.toFixed(1)}°, ${diffCA.toFixed(1)}°) fora do limite normativo de 120° ± 1.5° (118.5° - 121.5°).`,
-            severity: 'CRITICAL'
-          });
-        }
-      }
-    });
-
-    // b) NEMA Voltage Unbalance Formula: Deseq_V = (max_desvio_V / V_media) * 100 > 2.0%
-    const vList = [avgVan, avgVbn, avgVcn].filter(v => v > 0);
-    if (vList.length === 3) {
-      const vMedia = (avgVan + avgVbn + avgVcn) / 3;
-      if (vMedia > 0) {
-        const maxDesvioV = Math.max(Math.abs(avgVan - vMedia), Math.abs(avgVbn - vMedia), Math.abs(avgVcn - vMedia));
-        voltageUnbalancePercentNema = (maxDesvioV / vMedia) * 100;
-        if (voltageUnbalancePercentNema > 2.0) {
-          phaseAlerts.push({
-            type: 'CRITICO_DESEQUILIBRIO_TENSAO_NEMA',
-            message: `Crítico: Desequilíbrio de Tensão NEMA (${voltageUnbalancePercentNema.toFixed(2)}%) excede o limite máximo permitido de 2.0%.`,
-            severity: 'CRITICAL'
-          });
-        }
-      }
-    }
-
-    // c) Current Unbalance Formula: Deseq_I = (max_desvio_I / I_media) * 100 > 15.0%
-    const iList = [avgIa, avgIb, avgIc].filter(i => i > 0);
-    if (iList.length === 3) {
-      const iMedia = (avgIa + avgIb + avgIc) / 3;
-      if (iMedia > 0) {
-        const maxDesvioI = Math.max(Math.abs(avgIa - iMedia), Math.abs(avgIb - iMedia), Math.abs(avgIc - iMedia));
-        currentUnbalancePercent = (maxDesvioI / iMedia) * 100;
-        if (currentUnbalancePercent > 15.0) {
-          phaseAlerts.push({
-            type: 'ALERTA_DESEQUILIBRIO_CORRENTE',
-            message: `Alerta de Desequilíbrio de Corrente Trifásico: Desequilíbrio de corrente (${currentUnbalancePercent.toFixed(1)}%) excede o limite de 15.0%.`,
-            severity: 'WARNING'
-          });
-        }
-      }
-    }
-  }
-
-  const { recommendedTap, tapAdjustmentAdvice } = buildTapRecommendation(
-    transformer,
-    overallAvgPhasePhaseV,
-    dataQuality
-  );
 
   // -------------------------------------------------------------
   // ANÁLISE DE FASES E SIMULAÇÃO DE BALANCEAMENTO SECUNDÁRIO
@@ -957,25 +726,15 @@ export function performFullDiagnosticAnalysis(
     loadingPercentC: Math.round(loadingPercentC * 10) / 10,
     loadingCondition,
     phaseTypeEvaluated: phaseType,
-    voltageUnbalancePercentNema: Math.round(voltageUnbalancePercentNema * 100) / 100,
-    currentUnbalancePercent: Math.round(currentUnbalancePercent * 100) / 100,
-    phaseAlerts,
+    currentUnbalancePercent,
     cycleMode,
     dataQuality,
     prodist,
-    estimatedCopperLossW: Math.round(estimatedCopperLossW),
-    estimatedIronLossW: Math.round(estimatedIronLossW),
-    totalCalculatedLossW: Math.round(totalCalculatedLossW),
-    calculatedEfficiencyPercent: Math.round(calculatedEfficiencyPercent * 100) / 100,
     windingMaterial,
     oilType: transformer.oilType || 'MINERAL',
     manufacturingDate: transformer.manufacturingDate || 'N/A',
     efficiencyLevel: transformer.efficiencyLevel,
-    thermalConstantTk,
-    thermalCorrectionFactorKt: Math.round(thermalCorrectionFactorKt * 1000) / 1000,
     recommendedFuse,
-    recommendedTap,
-    tapAdjustmentAdvice,
     phaseBalanceAnalysis
   };
 }

@@ -83,6 +83,61 @@ O **Ferracine Diag Trafo** é um sistema PWA / Web offline-first voltado para en
   - **Desbloqueio de TAP:** O desbalanceamento de corrente de campo passa a ser tratado como alerta operacional de rede (NDU 006 / NDU 007) e não mais como erro de medição do eletricista, liberando o cálculo assertivo de comutação de TAP.
   - **Parecer Operacional e Relatórios:** Laudo PDF, tela de diagnóstico e planilha Excel agora trazem alertas explícitos de remanejamento e balanceamento de ramais na BT da fase crítica para evitar reincidência de queima do elo fusível primário.
 
+### 2.8. Higienização Arquitetural e Limpeza de Código Obsoleto (07/09/2026)
+- **Eliminação de Código Morto:**
+  - Removidos definitivamente os arquivos legados órfãos `src/data/normativeBase.ts` e `src/data/transformerDatabase.ts` (100% substituídos pelo SQLite relacional `ferracine-trafo.sqlite`).
+- **Remoção de Cálculos Desacoplados do Escopo de Campo:**
+  - **Algoritmo de Comutação de TAP:** Removidas as funções e propriedades de recomendação de TAP no diagnóstico, focando o relatório nas reais necessidades periciais de campo.
+  - **Cálculo de Perdas Joule Operacionais e Eficiência:** Removidos do diagnóstico e relatórios, eliminando fórmulas conceituais desnecessárias para a auditoria de sobrecarga.
+  - **Fórmulas Empíricas Exponenciais:** Removida a função `computeNominalLossesAndEfficiency` ($5.5 \cdot S^{0.85}$, etc.), mantendo a integridade dos dados reais de fábrica do SQLite.
+  - **Ângulos e NEMA Inoperantes:** Removidas variáveis sem formulário de entrada (`angleA, angleB, angleC`, `phaseAngleTheta`), o alerta inoperante `ERRO_ANGULO_TRIFASICO`, o desbalanceamento NEMA (`voltageUnbalancePercentNema`) e a coleção órfã `phaseAlerts`.
+- **Eliminação de Redundâncias:**
+  - `DiagnosticSummary.tsx` e `pdfGenerator.ts` agora consomem diretamente `analysis.currentUnbalancePercent`.
+- **Foco Estrito do Sistema:**
+  - Diagnóstico conciso e robusto: 1) Status de carregamento térmico do trafo (% e condição NBR 5356-7); 2) Identificação das fases de maior e menor carregamento e fase crítica; 3) Médias elétricas e potências; 4) Conformidade de tensão e FDTP (PRODIST Módulo 8); 5) Elo fusível primário adequado (ETU-109 Tabela 16); 6) Simulação pericial de balanceamento secundário (NDU 006 / NDU 007).
+
+### 2.9. Modularização Completa dos Módulos Monolíticos (07/09/2026)
+- **Extração de Imagens de Fórmulas:**
+  - Excluído o monolítico `src/utils/formulaImages.ts` (387 KB de Base64 embutido).
+  - Criado `src/utils/formulaAssets.ts`, carregando os arquivos PNG sob demanda a partir de `public/formulas/` com cache em memória e suporte híbrido Navegador/Node.js (`/* @vite-ignore */`).
+- **Modularização do Gerador de Laudos PDF (`src/utils/pdfGenerator.ts` -> `src/utils/pdf/`):**
+  - Dividido em módulos coesos e especializados:
+    - `types.ts`: Definições de tipagem, paleta de cores institucional e `formatKv`.
+    - `pdfHeader.ts`: Renderização do cabeçalho oficial, logo Energisa vetorial e rodapé global com numeração dinâmica.
+    - `pdfTables.ts`: Tabelas executivas (`autoTable`) de avaliação PRODIST/NDU e medições temporizadas.
+    - `pdfSections.ts`: Páginas 1, 2, 3 (diagrama fasorial hexagonal em A4 paisagem) e 4 (normativa e fórmulas recortadas).
+    - `pdfPhotos.ts`: Anexo fotográfico de campo com enquadramento proporcional (1 foto por página, até 15 fotos).
+    - `index.ts`: Orquestrador assíncrono de compilação do documento PDF.
+  - `src/utils/pdfGenerator.ts` transformado em fachada re-exportadora retrocompatível.
+- **Modularização da Camada de Banco de Dados (`src/utils/sqliteAndSplitLoader.ts` -> `src/utils/database/`):**
+  - Dividido em módulos especializados:
+    - `types.ts`: Interfaces de esquemas, faixas PRODIST nominais e constantes.
+    - `sqliteRuntime.ts`: Inicialização WebAssembly (`sql.js`), persistência IndexedDB e URLs locais de assets.
+    - `sqliteMappers.ts`: Conversores de tipos, mapeamento de tabelas (`transformers`, `inmetro_models`, `fuse_recommendations`) e validação de integridade.
+    - `sqliteQueries.ts`: Consultas em memória, classificação PRODIST Módulo 8 e busca assertiva de elo fusível da Tabela 16.
+    - `index.ts`: Ponto de entrada do módulo.
+  - `src/utils/sqliteAndSplitLoader.ts` reduzido a uma fachada retrocompatível.
+- **Modularização do Componente de Medições Temporizadas (`TimedMeasurements.tsx`):**
+  - Reduzido de 869 linhas para 318 linhas de orquestração limpa.
+  - Extraídos os subcomponentes:
+    - `MeasurementTimerControls.tsx`: Seletores de quantidade de medições (1, 2 ou 3) e modo de intervalo (1s, 5m, 10m).
+    - `MeasurementStageCard.tsx`: Cartão individual de cada medição com suporte aos dois estados (display digital do cronômetro com bloqueio de tela vs. campos de entrada de tensão F-N, F-F, correntes e validação).
+
+### 2.10. Migração para Fórmulas Matemáticas Vetoriais em SVG (07/09/2026)
+- **Eliminação Completa de Imagens PNG:**
+  - Excluídos todos os arquivos estáticos de imagem em `public/formulas/` e `public/formula_in_trifasico.png`.
+- **Implementação do Módulo de Fórmulas SVG (`src/utils/formulaSvgs.ts`):**
+  - Fórmulas matemáticas vetoriais com resolução infinita (estilo LaTeX / IEEE / ABNT):
+    - $I_N$ trifásica ($S_{\text{nom}} / (\sqrt{3} \times V_{\text{sec}})$ — NDU 006);
+    - $I_N$ monofásica ($S_{\text{nom}} / V_{\text{sec}}$ — NDU 007);
+    - Potência aparente trifásica e carregamento de pico ($S = \sqrt{3} V I$, $\%$ Pico);
+    - FDTP $\%$ e equação de $\beta$ (PRODIST Módulo 8);
+    - Desbalanço de carga BT ($15\%$ NDU 006 / 007).
+  - Suporte a tema escuro/claro nativo via `currentColor`.
+  - Conversor de alta densidade (300 DPI) para o Laudo PDF via Canvas offscreen.
+- **Componente Vetorial React (`src/components/FormulaSvg.tsx`):**
+  - Renderiza as fórmulas diretamente como SVG responsivo em `NormsAndCalculationsView.tsx`, com nitidez perfeita em qualquer zoom de tela.
+
 ---
 
 ## 3. Arquitetura Técnica e Stack de Tecnologias
@@ -103,8 +158,9 @@ graph TD
 | Componente | Tecnologia | Papel |
 | :--- | :--- | :--- |
 | **Frontend** | React 19 + TypeScript + Vite | Interface responsiva, temas Claro/Escuro, acessibilidade. |
-| **Engine Elétrica** | TypeScript puro (`src/utils/electricalCalculations.ts`) | Fórmulas PRODIST Módulo 8, NDU/ETU, perdas, eficiências e TAPs. |
-| **Banco Offline** | SQLite 3 via WebAssembly (`sql.js`) | Banco relacional `public/database/ferracine-trafo.sqlite` carregado localmente sem dependência de internet. |
+| **Engine Elétrica** | TypeScript puro (`src/utils/electricalCalculations.ts`) | Fórmulas PRODIST Módulo 8, NDU 006, NBR 5356-7 e ETU-109. |
+| **Módulo PDF** | `src/utils/pdf/` (`jspdf` + `jspdf-autotable`) | Geração modular do laudo técnico pericial de 5 páginas. |
+| **Banco Offline** | SQLite 3 via WebAssembly (`src/utils/database/`) | Banco relacional `public/database/ferracine-trafo.sqlite` carregado localmente sem dependência de internet. |
 | **PWA / Cache** | Service Worker nativo | Cache de assets estáticos, WASM e binário SQLite para funcionamento 100% offline. |
 | **Proxy Seguro** | Cloudflare Workers (`cloudflare-worker/`) | Intermediação das chamadas à API do GitHub protegendo tokens. |
 | **CI/CD** | GitHub Actions (`deploy-pages.yml`) | Validação estrita de tipos, testes automatizados e deploy contínuo no GitHub Pages. |
@@ -113,7 +169,7 @@ graph TD
 
 ## 4. Estado das Validações e Testes
 
-Todas as validações automáticas foram executadas localmente e na nuvem com **100% de aprovação**:
+Todas as validações automáticas foram executadas localmente com **100% de aprovação**:
 
 - **Checagem de Tipos TypeScript:**
   - Comando: `npx tsc --noEmit`
@@ -121,10 +177,13 @@ Todas as validações automáticas foram executadas localmente e na nuvem com **
 - **Testes Unitários e Normativos de Diagnóstico:**
   - Comando: `npm test` (`scripts/verify-diagnostic.ts`)
   - Resultado: **100% aprovado**.
-  - Validações: 1.183 modelos INMETRO (613 novos, 570 recondicionados), FDTP 6,16%, elo 12K, alertas PRODIST e bloqueio seguro de TAP.
+  - Validações: 1.183 modelos INMETRO (613 novos, 570 recondicionados), FDTP 6,16%, elo 12K, alertas PRODIST.
+- **Teste de Geração de Laudo PDF:**
+  - Comando: `npx tsx scripts/generate-test-pdf.ts` e `python scripts/verify-pdf.py dist/test-laudo.pdf`
+  - Resultado: **100% aprovado** (5 páginas completas, sem distorção, sem tabelas órfãs).
 - **Build de Produção:**
   - Comando: `npm run build`
-  - Resultado: **Sucesso** em ~11s via Vite.
+  - Resultado: **Sucesso** em ~11s via Vite sem qualquer advertência externa.
 - **GitHub Actions (GitHub Pages Deploy):**
   - Último Run: `33954442929` (Commit `72fe262`)
   - Status: **Success** (Build: 29s, Deploy: 11s).

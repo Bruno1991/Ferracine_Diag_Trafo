@@ -154,12 +154,6 @@ export interface SingleMeasurement {
   ic: number;
   in?: number; // Corrente no Neutro [A]
 
-  // Phase Angles (Degrees)
-  angleA?: number; // Phase A angle (deg)
-  angleB?: number; // Phase B angle (deg)
-  angleC?: number; // Phase C angle (deg)
-  phaseAngleTheta?: number; // Angle θ between V and I for Monofásico
-  
   // Power Factor
   powerFactor: number;
   
@@ -183,10 +177,6 @@ export interface ProdistStatus {
   unbalanceStatus: 'ADEQUADO' | 'PRECARIO' | 'CRITICO';
   fdtpPercent: number;
 }
-
-
-
-
 
 export interface DiagnosticAnalysis {
   avgVan: number;
@@ -220,15 +210,9 @@ export interface DiagnosticAnalysis {
   loadingPercentC?: number;
   loadingCondition: 'SUB-CARREGADO' | 'IDEAL' | 'ELEVADO' | 'SOBRECARGA_MODERADA' | 'SOBRECARGA_CRITICA';
 
-  // Specific Phase Validation Metrics & Alerts
+  // Specific Phase Validation Metrics
   phaseTypeEvaluated: PhaseType;
-  voltageUnbalancePercentNema: number;
   currentUnbalancePercent: number;
-  phaseAlerts: {
-    type: 'ALERTA_BAIXO_FATOR_POTENCIA' | 'ALERTA_DESEQUILIBRIO_CORRENTE' | 'ERRO_ANGULO_TRIFASICO' | 'CRITICO_DESEQUILIBRIO_TENSAO_NEMA';
-    message: string;
-    severity: 'CRITICAL' | 'WARNING';
-  }[];
 
   cycleMode: MeasurementCycleMode;
   dataQuality: {
@@ -256,26 +240,17 @@ export interface DiagnosticAnalysis {
       title: string;
       message: string;
     }>;
-    canIssueTapRecommendation: boolean;
     canIssueReport: boolean;
   };
   
   prodist: ProdistStatus;
   
-  estimatedCopperLossW: number;
-  estimatedIronLossW: number;
-  totalCalculatedLossW: number;
-  calculatedEfficiencyPercent: number;
   windingMaterial: 'ALUMINIO' | 'COBRE';
   oilType: 'MINERAL' | 'VEGETAL';
   manufacturingDate: string;
   efficiencyLevel?: number | string;
-  thermalConstantTk: number;
-  thermalCorrectionFactorKt: number;
   
   recommendedFuse: FuseRecommendation | null;
-  recommendedTap: string;
-  tapAdjustmentAdvice: string;
 
   // Análise de Fases e Simulação de Balanceamento Secundário (NDU 006 / NBR 5356-7)
   phaseBalanceAnalysis?: PhaseBalanceAnalysis;

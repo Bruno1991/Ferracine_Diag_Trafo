@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, AlertOctagon, Activity, Scale, CheckCircle2, ArrowRight } from 'lucide-react';
 import { DiagnosticAnalysis, TransformerSpec, InitialDiagnosticData } from '../types';
+import { formatKv } from '../utils/electricalCalculations';
 
 interface DiagnosticSummaryProps {
   analysis: DiagnosticAnalysis;
@@ -19,12 +20,9 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
   const isPrecarious = !isAmedir && analysis.prodist.voltageStatus === 'PRECARIA';
   const isCritical = !isAmedir && analysis.prodist.voltageStatus === 'CRITICA';
 
-  // Cálculo do Desequilíbrio de Carga entre as Fases (NDU 006 / NDU 007)
+  // Desequilíbrio de Carga entre as Fases (NDU 006 / NDU 007)
   const isTri = transformer.phaseType === 'TRIFASICO';
-  const currents = [analysis.avgIa, analysis.avgIb, analysis.avgIc].filter((c) => c > 0);
-  const avgI = currents.length > 0 ? currents.reduce((a, b) => a + b, 0) / currents.length : 0;
-  const maxDev = avgI > 0 ? Math.max(...currents.map((c) => Math.abs(c - avgI))) : 0;
-  const unbalancePercent = avgI > 0 ? Number(((maxDev / avgI) * 100).toFixed(1)) : 0;
+  const unbalancePercent = analysis.currentUnbalancePercent || 0;
   const hasUnbalance = isTri && unbalancePercent > 15;
 
   // Identificação das fases com maior e menor carregamento
@@ -185,7 +183,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
           </div>
           <p className="text-[11px] text-slate-700 dark:text-slate-300 font-mono mt-2 font-medium">
             {transformer.powerKva > 0 && transformer.primaryVoltageV > 0
-              ? `Proteção (${transformer.primaryVoltageV / 1000} kV / ${transformer.powerKva} kVA)`
+              ? `Proteção (${formatKv(transformer.primaryVoltageV)} / ${transformer.powerKva} kVA)`
               : 'Aguardando dados do transformador'}
           </p>
         </div>

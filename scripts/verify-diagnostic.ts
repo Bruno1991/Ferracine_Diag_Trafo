@@ -42,7 +42,6 @@ assert(analysis.dataQuality.status === 'INCONSISTENTE', `Qualidade esperada INCO
 assert(analysis.dataQuality.issues.some((issue) => issue.code === 'RELACAO_TENSAO'), 'A inconsistência F-N/F-F não foi detectada.');
 assert(analysis.dataQuality.issues.some((issue) => issue.code === 'DESEQUILIBRIO_CORRENTE' && issue.severity === 'CRITICAL'), 'O desbalanceamento crítico de corrente não foi detectado.');
 assert(analysis.dataQuality.issues.some((issue) => issue.code === 'CRONOLOGIA'), 'A cronologia invertida não foi detectada.');
-assert(!analysis.dataQuality.canIssueTapRecommendation && analysis.recommendedTap.includes('BLOQUEADA'), 'A recomendação de TAP deveria estar bloqueada.');
 
 const partialRaw: SingleMeasurement = {
   id: 1, label: 'Parcial', timestamp: '10:00:00', isLocked: false, isRecorded: true,
@@ -60,7 +59,7 @@ const partialAnalysis = performFullDiagnosticAnalysis([
 assert(partial.avgVoltagePhaseNeutral === 0 && partial.avgVoltagePhasePhase === 0, 'Entrada parcial nao pode produzir media trifasica.');
 assert(getMissingMeasurementFields(partial, transformer).includes('Vbn'), 'Campos ausentes da medicao parcial nao foram detectados.');
 assert(partialAnalysis.prodist.voltageStatus === 'A MEDIR', 'Entrada parcial nao pode receber classificacao PRODIST.');
-assert(!partialAnalysis.dataQuality.canIssueTapRecommendation && !partialAnalysis.dataQuality.canIssueReport, 'Entrada parcial deve bloquear TAP e laudo.');
+assert(!partialAnalysis.dataQuality.canIssueReport, 'Entrada parcial deve bloquear laudo.');
 
 const healthyRaw: SingleMeasurement[] = ['10:00:00', '10:00:05', '10:00:10'].map((timestamp, index) => ({
   id: index + 1,
@@ -79,7 +78,6 @@ const healthy = healthyRaw.map((measurement) => processSingleMeasurement(measure
 const healthyAnalysis = performFullDiagnosticAnalysis(healthy, transformer, '5s');
 assert(healthyAnalysis.dataQuality.status === 'VALIDO' && healthyAnalysis.dataQuality.canIssueReport, 'Tres medicoes coerentes deveriam liberar o laudo.');
 assert(healthyAnalysis.prodist.voltageStatus === 'ADEQUADA', 'Cenario equilibrado deveria ser ADEQUADO no PRODIST.');
-assert(healthyAnalysis.recommendedTap.includes(`TAP ${transformer.activeTapIndex}`), 'Recomendacao deve usar o TAP real do transformador.');
 
 const instantaneousRaw: SingleMeasurement = {
   id: 1,
@@ -97,8 +95,7 @@ const instantaneousRaw: SingleMeasurement = {
 const instantaneous = processSingleMeasurement(instantaneousRaw, transformer);
 const instantaneousAnalysis = performFullDiagnosticAnalysis([instantaneous], transformer, '10m');
 assert(instantaneousAnalysis.dataQuality.status === 'VALIDO', 'Uma medicao individual completa deve ser validada como Medicao Instantanea (status VALIDO).');
-assert(instantaneousAnalysis.dataQuality.canIssueTapRecommendation, 'Medicao instantanea deve liberar recomendacao de TAP.');
-assert(!instantaneousAnalysis.recommendedTap.includes('BLOQUEADA'), 'Medicao instantanea nao pode ter TAP bloqueado.');
+assert(instantaneousAnalysis.dataQuality.canIssueReport, 'Medicao instantanea deve liberar emissao de laudo.');
 
 // -------------------------------------------------------------
 // Caso Real de Campo: Trafo PTCA0121 (112.5 kVA / 220V - TRAEL)
@@ -141,9 +138,8 @@ assert(Math.abs((ptca0121Meas.loadingPercentB || 0) - 101.6) < 0.5, `Carregament
 // 3. Condição diagnóstica DEVE ser SOBRECARGA_CRITICA (e NÃO "IDEAL"!)
 assert(ptca0121Analysis.loadingCondition === 'SOBRECARGA_CRITICA', `Condição de carga esperada SOBRECARGA_CRITICA; obtida ${ptca0121Analysis.loadingCondition}`);
 
-// 4. TAP NÃO DEVE SER BLOQUEADO por desbalanço de corrente de campo (NDU 006 / NDU 007)
-assert(ptca0121Analysis.dataQuality.canIssueTapRecommendation, 'Desbalanço de carga de campo não pode bloquear a recomendação de TAP.');
-assert(!ptca0121Analysis.recommendedTap.includes('BLOQUEADA'), 'O TAP não deve ser bloqueado.');
+// 4. Emissão de laudo liberada mesmo com desbalanço de corrente de campo (NDU 006 / NDU 007)
+assert(ptca0121Analysis.dataQuality.canIssueReport, 'Desbalanço de carga de campo não pode bloquear a emissão do laudo.');
 
 // 5. Elo fusível primário recomendado deve ser 5H (ETU-109 Tabela 16 para 112.5 kVA / 13.8 kV)
 assert(ptca0121Analysis.recommendedFuse?.fuseCode === '5H', `Elo esperado 5H; obtido ${ptca0121Analysis.recommendedFuse?.fuseCode}`);
@@ -154,9 +150,10 @@ assert(serviceWorker.includes('networkFirst') && serviceWorker.includes('ferraci
 console.log(JSON.stringify({
   fdM2: measurements[1].fdtpPercent,
   inmetroModels: inmetroModels.length,
-  fuse: analysis.recommendedFuse.fuseCode,
+  fuse: analysis.recommendedFuse?.fuseCode,
   dataQuality: analysis.dataQuality.status,
   issues: analysis.dataQuality.issues.map((issue) => `${issue.measurementId || 'bloco'}:${issue.code}:${issue.severity}`),
-  tap: analysis.recommendedTap,
-  healthyTap: healthyAnalysis.recommendedTap
+  canIssueReport: analysis.dataQuality.canIssueReport,
+  ptca0121CriticalPhase: ptca0121Meas.criticalPhase,
+  ptca0121PeakLoading: ptca0121Meas.maxPhaseLoadingPercent
 }, null, 2));
