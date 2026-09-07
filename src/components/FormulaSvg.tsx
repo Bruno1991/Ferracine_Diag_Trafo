@@ -11,7 +11,7 @@ export const FormulaSvg: React.FC<FormulaSvgProps> = ({ formula, className = '' 
 
   return (
     <div
-      className={`w-full flex justify-center items-center overflow-x-auto select-none ${className}`}
+      className={`w-full flex justify-center items-center select-none overflow-hidden py-1 ${className}`}
       dangerouslySetInnerHTML={{ __html: svgXml }}
     />
   );

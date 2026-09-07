@@ -134,8 +134,8 @@ export const NormsAndCalculationsView: React.FC = () => {
               <span>I. Corrente Nominal Trifásica (IN)</span>
               <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">NDU 006 (pág. 178)</span>
             </div>
-            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
-              <FormulaSvg formula="in_trifasica" className="max-h-24" />
+            <div className="bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[54px]">
+              <FormulaSvg formula="in_trifasica" className="w-full" />
             </div>
             <p className="text-[11px] text-slate-500 font-mono">I = Potência (kVA) / [√3 × Tensão (kV)] = Potência (kVA) / [1,732 × Tensão (kV)]</p>
           </div>
@@ -145,8 +145,8 @@ export const NormsAndCalculationsView: React.FC = () => {
               <span>I. Corrente Nominal Monofásica (IN)</span>
               <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">NDU 007 (pág. 189)</span>
             </div>
-            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
-              <FormulaSvg formula="in_monofasica" className="max-h-24" />
+            <div className="bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[54px]">
+              <FormulaSvg formula="in_monofasica" className="w-full" />
             </div>
             <p className="text-[11px] text-slate-500 font-mono">I = Potência (kVA) / Tensão (kV)</p>
           </div>
@@ -156,8 +156,8 @@ export const NormsAndCalculationsView: React.FC = () => {
               <span>II. Potência Aparente e Carregamento</span>
               <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">IEEE Std 1459 / NBR 5356-7</span>
             </div>
-            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
-              <FormulaSvg formula="potencia_carregamento" className="max-h-28" />
+            <div className="bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[66px]">
+              <FormulaSvg formula="potencia_carregamento" className="w-full" />
             </div>
             <p className="text-[11px] text-slate-500 font-mono">S = (Van·Ia + Vbn·Ib + Vcn·Ic)/1000 | Carga Fase (%) = (Ifase / Inominal) × 100</p>
           </div>
@@ -167,8 +167,8 @@ export const NormsAndCalculationsView: React.FC = () => {
               <span>III. Fator de Desbalanço de Tensão (FDTP)</span>
               <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">PRODIST Módulo 8 (Eq. 15 e 16)</span>
             </div>
-            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
-              <FormulaSvg formula="prodist_fdtp" className="max-h-28" />
+            <div className="bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[72px]">
+              <FormulaSvg formula="prodist_fdtp" className="w-full" />
             </div>
             <p className="text-[11px] text-slate-500 font-mono">β = (Vab⁴ + Vbc⁴ + Vca⁴)/(Vab² + Vbc² + Vca²)² | FDTP (%) = 100 × √((1 - √(3-6β))/(1 + √(3-6β)))</p>
           </div>
@@ -178,8 +178,8 @@ export const NormsAndCalculationsView: React.FC = () => {
               <span>IV. Desbalanço de Carga na Rede BT</span>
               <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400">NDU 006 / NDU 007</span>
             </div>
-            <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[95px]">
-              <FormulaSvg formula="desequilibrio_bt" className="max-h-24" />
+            <div className="bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded border border-slate-100 dark:border-slate-800 flex justify-center items-center min-h-[54px]">
+              <FormulaSvg formula="desequilibrio_bt" className="w-full" />
             </div>
             <p className="text-[11px] text-slate-500 font-mono">Desvio (%) = 100 × máx|Ifase - Imédia| / Imédia (Limiar de triagem do app: 15%)</p>
           </div>

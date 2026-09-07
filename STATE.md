@@ -135,8 +135,9 @@ O **Ferracine Diag Trafo** é um sistema PWA / Web offline-first voltado para en
     - Desbalanço de carga BT ($15\%$ NDU 006 / 007).
   - Suporte a tema escuro/claro nativo via `currentColor`.
   - Conversor de alta densidade (300 DPI) para o Laudo PDF via Canvas offscreen.
-- **Componente Vetorial React (`src/components/FormulaSvg.tsx`):**
+- **Componente Vetorial React (`src/components/FormulaSvg.tsx`) e Proporções Compactas:**
   - Renderiza as fórmulas diretamente como SVG responsivo em `NormsAndCalculationsView.tsx`, com nitidez perfeita em qualquer zoom de tela.
+  - Otimização das dimensões e ViewBoxes para formato compacto e equilibrado, eliminando cortes de borda e redimensionamento excessivo tanto na tela (Web UI) quanto no Laudo Pericial em PDF.
 
 ---
 

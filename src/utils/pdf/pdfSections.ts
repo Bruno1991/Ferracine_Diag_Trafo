@@ -518,9 +518,9 @@ export function renderPage4NormativeAndFormulas(
     }
     const aspect = (imgProps.width || 1) / (imgProps.height || 1);
     const boxW = pageWidth - margin * 2;
-    const imgW = Math.min(boxW - 12, 135);
+    const imgW = Math.min(boxW - 20, 102);
     const imgH = imgW / aspect;
-    const itemTotalH = imgH + 11;
+    const itemTotalH = imgH + 8.5;
 
     if (currentY + itemTotalH > pageHeight - 18) {
       doc.addPage('a4', 'p');
@@ -529,26 +529,26 @@ export function renderPage4NormativeAndFormulas(
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.8);
+    doc.setFontSize(7.6);
     doc.setTextColor(30, 58, 138);
-    doc.text(title, margin + 2, currentY + 3.5);
+    doc.text(title, margin + 2, currentY + 3.2);
 
     doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.8);
+    doc.setFontSize(6.6);
     doc.setTextColor(100, 116, 139);
-    doc.text(normRef, pageWidth - margin - 2, currentY + 3.5, { align: 'right' });
+    doc.text(normRef, pageWidth - margin - 2, currentY + 3.2, { align: 'right' });
 
-    currentY += 4.8;
+    currentY += 4.5;
 
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(203, 213, 225);
-    doc.roundedRect(margin, currentY, boxW, imgH + 3, 1.5, 1.5, 'FD');
+    doc.roundedRect(margin, currentY, boxW, imgH + 2.6, 1.2, 1.2, 'FD');
 
     const imgX = margin + (boxW - imgW) / 2;
-    const imgY = currentY + 1.5;
+    const imgY = currentY + 1.3;
     doc.addImage(imgDataUrl, 'PNG', imgX, imgY, imgW, imgH);
 
-    currentY += imgH + 5;
+    currentY += imgH + 4.2;
   };
 
   // I. Corrente Nominal IN
