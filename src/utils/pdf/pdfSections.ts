@@ -33,8 +33,7 @@ export function renderPage1IdentificationAndSpecs(
 
   if (filledAuthors.length > 0) {
     filledAuthors.forEach((author) => {
-      const roleDisplay = author.role === 'TÉCNICO' ? 'RESPONSÁVEL' : author.role;
-      const left = `${roleDisplay}: ${author.name}`;
+      const left = `${author.role}: ${author.name}`;
       const right = author.matricula?.trim() ? `Matrícula: ${author.matricula.trim()}` : undefined;
       idRows.push({ left, right });
     });
@@ -279,7 +278,7 @@ export function renderPage2MeasurementsAndVerdict(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(PDF_COLORS.secondary[0], PDF_COLORS.secondary[1], PDF_COLORS.secondary[2]);
-    doc.text('• DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO:', margin + 3, textY);
+    doc.text('• DIAGNÓSTICO POR FASE (NDU 006 / NBR 5356-7):', margin + 3, textY);
     textY += 4.2;
 
     const dentroText = pba.phasesWithinNominal.length > 0
@@ -292,30 +291,6 @@ export function renderPage2MeasurementsAndVerdict(
       : 'Nenhuma.';
     printItem('Fases fora do nominal / sobrecarga (> 100%)', foraText, pba.phasesExceedingNominal.length > 0);
     textY += 1.5;
-
-    // Caixa de Veredito de Balanceamento
-    const verdictLines = doc.splitTextToSize(pba.verdict, boxWidth - 16);
-    const verdictH = verdictLines.length * 3.5 + 7;
-
-    doc.setFillColor(pba.willBeWithinNominalAfterBalancing ? 240 : 254, pba.willBeWithinNominalAfterBalancing ? 253 : 242, pba.willBeWithinNominalAfterBalancing ? 244 : 242);
-    doc.setDrawColor(pba.willBeWithinNominalAfterBalancing ? 187 : 254, pba.willBeWithinNominalAfterBalancing ? 247 : 202, pba.willBeWithinNominalAfterBalancing ? 208 : 202);
-    doc.roundedRect(margin + 4, textY, boxWidth - 8, verdictH, 1.5, 1.5, 'FD');
-
-    let vY = textY + 3.8;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.2);
-    doc.setTextColor(pba.willBeWithinNominalAfterBalancing ? 22 : 153, pba.willBeWithinNominalAfterBalancing ? 101 : 27, pba.willBeWithinNominalAfterBalancing ? 52 : 27);
-    doc.text('Parecer de Remanejamento:', margin + 7, vY);
-    vY += 3.7;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.0);
-    verdictLines.forEach((vLine: string) => {
-      doc.text(vLine, margin + 7, vY);
-      vY += 3.4;
-    });
-
-    textY += verdictH + 3;
   }
 
   // Bloco 3: ALERTA DE DESEQUILÍBRIO DE CARGA
@@ -566,10 +541,12 @@ export function renderPage4NormativeAndFormulas(
 
   // 4. PARECER E OBSERVAÇÕES DE CAMPO
   if (initialData.technicalNotes?.trim()) {
+    currentY += 14;
+
     const textLines = doc.splitTextToSize(initialData.technicalNotes.trim(), pageWidth - 2 * margin - 8);
     const boxHeight = Math.max(18, textLines.length * 3.8 + 8);
 
-    if (currentY + boxHeight + 25 > pageHeight) {
+    if (currentY + boxHeight + 15 > pageHeight) {
       doc.addPage('a4', 'p');
       currentY = 28;
       drawHeader(doc, 'PARECER E OBSERVAÇÕES DE CAMPO', doc.getNumberOfPages(), initialData);

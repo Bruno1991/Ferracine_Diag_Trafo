@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, AlertOctagon, Activity, Scale, CheckCircle2, ArrowRight } from 'lucide-react';
+import { ShieldCheck, AlertOctagon, Activity, Scale, CheckCircle2 } from 'lucide-react';
 import { DiagnosticAnalysis, TransformerSpec, InitialDiagnosticData } from '../types';
 import { formatKv } from '../utils/electricalCalculations';
 
@@ -66,9 +66,6 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
           <p className="text-xs font-mono text-amber-900 dark:text-amber-200 leading-relaxed">
             <strong>Fases afetadas:</strong> Fase {worstPhase.phase} com maior carga ({worstPhase.current} A — {worstPhase.loading}%), Fase {lowestPhase.phase} com menor carga ({lowestPhase.current} A — {lowestPhase.loading}%). Desvio de {unbalancePercent}% excede o limiar normativo de 15%.
           </p>
-          <p className="text-[11px] font-mono text-amber-800 dark:text-amber-300">
-            Recomenda-se remanejamento de carga entre as fases na rede secundária para mitigar aquecimento assimétrico e prevenir atuação indevida do elo fusível (NDU 006 / NDU 007).
-          </p>
         </div>
       )}
 
@@ -82,23 +79,10 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
             </div>
             {analysis.criticalPhase && analysis.criticalPhase !== 'EQUILIBRADO' ? (
               <>
-                A Fase <strong>{analysis.criticalPhase}</strong> opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas assimétricas causam fusão recorrente de elos de proteção e envelhecimento acelerado do transformador.
-                {pba && (
-                  <div className="mt-1 pt-1 border-t border-red-200 dark:border-red-800/60 font-semibold">
-                    {pba.willBeWithinNominalAfterBalancing ? (
-                      <span className="text-emerald-800 dark:text-emerald-300">
-                        ✓ O balanceamento das fases equalizará a demanda e reduzirá o carregamento para <strong>{pba.postBalancingLoadingPercent}%</strong>, ficando dentro do limite nominal.
-                      </span>
-                    ) : (
-                      <span className="text-red-800 dark:text-red-300">
-                        ⚠ ATENÇÃO PERICIAL: Mesmo realizando o balanceamento perfeito entre as fases, o transformador continuará sobrecarregado operando a <strong>{pba.postBalancingLoadingPercent}%</strong> da sua capacidade nominal ({pba.postBalancingCurrentA} A médios por fase).
-                      </span>
-                    )}
-                  </div>
-                )}
+                A Fase <strong>{analysis.criticalPhase}</strong> opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais).
               </>
             ) : (
-              <>O transformador opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais). Sobrecargas elevadas causam aquecimento excessivo e envelhecimento acelerado do transformador. É recomendado o remanejamento de carga ou aumento de capacidade.</>
+              <>O transformador opera com carregamento de <strong>{analysis.maxPhaseLoadingPercent || analysis.maxLoadingPercent}%</strong> ({analysis.nominalCurrentSecondaryA} A nominais).</>
             )}
           </div>
         </div>
@@ -221,114 +205,60 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
         </div>
       </div>
 
-      {/* ANÁLISE DE FASES E SIMULAÇÃO DE BALANCEAMENTO SECUNDÁRIO (Substitui Perdas/Rendimento e TAP) */}
+      {/* ANÁLISE INDIVIDUAL DAS FASES */}
       <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700/80 space-y-3">
         <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
           <Scale className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          <span>DIAGNÓSTICO POR FASE E SIMULAÇÃO DE BALANCEAMENTO DE CARGA (NDU 006 / NBR 5356-7)</span>
+          <span>DIAGNÓSTICO POR FASE (NDU 006 / NBR 5356-7)</span>
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          {/* Card 1: Fases Dentro e Fora do Nominal */}
-          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
-              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                COMPORTAMENTO INDIVIDUAL DAS FASES
-              </span>
-              <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
-                Nominal: {analysis.nominalCurrentSecondaryA} A
-              </span>
-            </div>
-
-            <div className="space-y-2 font-mono text-xs">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> FASES DENTRO DO NOMINAL (≤ 100%):
-                </span>
-                {pba && pba.phasesWithinNominal.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {pba.phasesWithinNominal.map((p) => (
-                      <span key={p.phase} className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-bold">
-                        Fase {p.phase}: {p.current} A ({p.loadingPercent}%)
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-500 italic mt-0.5">
-                    Nenhuma fase dentro do nominal (todas operando acima de 100%).
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1">
-                  <AlertOctagon className="w-3.5 h-3.5" /> FASES FORA DO NOMINAL (SOBRECARGA &gt; 100%):
-                </span>
-                {pba && pba.phasesExceedingNominal.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {pba.phasesExceedingNominal.map((p) => (
-                      <span key={p.phase} className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300 font-bold">
-                        Fase {p.phase}: {p.current} A ({p.loadingPercent}%)
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 italic mt-0.5">
-                    Nenhuma fase em sobrecarga.
-                  </p>
-                )}
-              </div>
-            </div>
+        <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              COMPORTAMENTO INDIVIDUAL DAS FASES
+            </span>
+            <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
+              Nominal: {analysis.nominalCurrentSecondaryA} A
+            </span>
           </div>
 
-          {/* Card 2: Simulação de Balanceamento Perfeito */}
-          <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5 flex flex-col justify-between">
+          <div className="space-y-2 font-mono text-xs">
             <div>
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  SE FIZER BALANCEAMENTO DE FASES
-                </span>
-                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                  pba?.willBeWithinNominalAfterBalancing
-                    ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300'
-                    : 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300'
-                }`}>
-                  {pba?.willBeWithinNominalAfterBalancing ? 'FICARÁ DENTRO DO NOMINAL' : 'CONTINUARÁ SOBRECARREGADO'}
-                </span>
-              </div>
-
-              <div className="mt-2 space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-600 dark:text-slate-400">Carregamento Projetado Pós-Balanceamento:</span>
-                  <strong className={`text-sm ${
-                    pba?.willBeWithinNominalAfterBalancing
-                      ? 'text-emerald-700 dark:text-emerald-300'
-                      : 'text-red-700 dark:text-red-400 font-bold'
-                  }`}>
-                    {pba?.postBalancingLoadingPercent}%
-                  </strong>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> FASES DENTRO DO NOMINAL (≤ 100%):
+              </span>
+              {pba && pba.phasesWithinNominal.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {pba.phasesWithinNominal.map((p) => (
+                    <span key={p.phase} className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-bold">
+                      Fase {p.phase}: {p.current} A ({p.loadingPercent}%)
+                    </span>
+                  ))}
                 </div>
-
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-slate-600 dark:text-slate-400">Corrente Média por Fase Projetada:</span>
-                  <strong className="text-slate-800 dark:text-slate-200">
-                    {pba?.postBalancingCurrentA} A
-                  </strong>
-                </div>
-              </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic mt-0.5">
+                  Nenhuma fase dentro do nominal (todas operando acima de 100%).
+                </p>
+              )}
             </div>
 
-            {/* Veredito Pericial Conclusivo */}
-            <div className={`p-2 rounded text-[11px] font-mono leading-relaxed border ${
-              pba?.willBeWithinNominalAfterBalancing
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-                : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-950 dark:text-red-200'
-            }`}>
-              <strong className="block mb-0.5 uppercase tracking-wider flex items-center gap-1">
-                <ArrowRight className="w-3 h-3 shrink-0" />
-                Parecer de Remanejamento:
-              </strong>
-              {pba?.verdict || 'Aguardando medições.'}
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1">
+                <AlertOctagon className="w-3.5 h-3.5" /> FASES FORA DO NOMINAL (SOBRECARGA &gt; 100%):
+              </span>
+              {pba && pba.phasesExceedingNominal.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {pba.phasesExceedingNominal.map((p) => (
+                    <span key={p.phase} className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300 font-bold">
+                      Fase {p.phase}: {p.current} A ({p.loadingPercent}%)
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 italic mt-0.5">
+                  Nenhuma fase em sobrecarga.
+                </p>
+              )}
             </div>
           </div>
         </div>

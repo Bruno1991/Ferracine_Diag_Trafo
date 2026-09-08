@@ -139,19 +139,14 @@ O **Ferracine Diag Trafo** é um sistema PWA / Web offline-first voltado para en
   - Renderiza as fórmulas diretamente como SVG responsivo em `NormsAndCalculationsView.tsx`, com nitidez perfeita em qualquer zoom de tela.
   - Otimização das dimensões e ViewBoxes para formato compacto e equilibrado, eliminando cortes de borda e redimensionamento excessivo tanto na tela (Web UI) quanto no Laudo Pericial em PDF.
 
-### 2.11. Remoção do Termo 'Técnico', Enxugamento do Parecer e Fórmulas no Laudo PDF (08/09/2026)
-- **Neutralidade Operacional (Eletricistas e Técnicos):**
-  - O termo restritivo *"técnico"* foi completamente removido de todas as telas, cabeçalhos, títulos de seções, caixas de diálogo, legendas de fotos, botões, mensagens de validação, documentos PDF e planilhas Excel.
-  - O cabeçalho institucional agora exibe *"DIAGNÓSTICO DE TRANSFORMADORES"*.
-  - A Seção de Parecer agora é intitulada *"PARECER E RESULTADOS CONSOLIDADOS"*.
-  - O anexo fotográfico estampa *"INSPEÇÃO DE CAMPO"*.
-  - O cadastro de autores foi unificado para *"AUTORES DO LAUDO (ELETRICISTAS / RESPONSÁVEIS)"*, com os cargos `ELETRICISTA`, `RESPONSÁVEL`, `INSPETOR` e `ENGENHEIRO`.
-- **Enxugamento do Parecer Técnico (Página 2):**
-  - Removido o item redundante *"Carregamento projetado após balanceamento perfeito: X% (Y A médios por fase)"*.
-  - Removida a linha de *"Recomendação: Remanejamento imediato de ramais e cargas..."* sob o alerta de desequilíbrio.
-- **Compactação de Fórmulas no Laudo PDF (Página 4):**
-  - Deletadas as fórmulas II (Potência Aparente e Carregamento), III (FDTP PRODIST) e IV (Desbalanço BT) da Seção 3 do PDF, preservando com nitidez e destaque a Fórmula I (Corrente Nominal $I_N$).
-  - O laudo consolidado agora enquadra as observações de campo perfeitamente, eliminando quebras de página redundantes.
+### 2.11. Eliminação de Sugestões e Dicas, Foco em Dados Reais e Espaçamento no Laudo (08/09/2026)
+- **Eliminação de Dicas, Sugestões e Simulação de Balanceamento:**
+  - Removidos completamente do app e do PDF qualquer palpite ou sugestão de intervenção operacional (ex: *"Recomenda-se remanejamento de carga..."*, *"⚠ ATENÇÃO PERICIAL: Mesmo realizando o balanceamento..."*, *"SE FIZER BALANCEAMENTO DE FASES... CONTINUARÁ SOBRECARREGADO"* e *"Parecer de Remanejamento"*).
+  - O sistema passa a apresentar exclusivamente os **resultados objetivos e quantitativos** dos dados inseridos pelo usuário (carregamento por fase, limites normativos PRODIST, elo de proteção ETU e fases anômalas).
+- **Flexibilidade em Autores do Laudo:**
+  - Seção padronizada como *"AUTORES DO LAUDO (ELETRICISTA / TÉCNICO)"*, com botão *"ADICIONAR ELETRICISTA / TÉCNICO"* e opções `ELETRICISTA`, `TÉCNICO`, `ENGENHEIRO` e `RESPONSÁVEL`.
+- **Afastamento Visual no Laudo PDF (Página 4):**
+  - Adicionado espaçamento vertical generoso (+14 mm) entre a Seção 3 (*FÓRMULAS MATEMÁTICAS*) e a Seção 4 (*PARECER E OBSERVAÇÕES DE CAMPO*), eliminando proximidade excessiva e melhorando a diagramação pericial.
 
 ---
 

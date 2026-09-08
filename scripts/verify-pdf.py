@@ -43,15 +43,19 @@ assert "MODO DE TESTE:" in page2_text, "FALHA: MODO DE TESTE: não encontrado na
 assert "Ciclo destinado a validar cálculos" in page2_text or "ciclo destinado a validar" in page2_text, "FALHA: texto explicativo de modo de teste não encontrado na linha abaixo."
 print("OK [4]: Na página 2 (Medições de Campo), texto após ':' está na linha abaixo.")
 
-# 5. Remoção do termo 'técnico' / 'tecnico' do PDF
-import re
-assert not re.search(r't[eé]cnic', full_text, re.IGNORECASE), "FALHA: Palavra 'técnico/tecnico' ainda encontrada no PDF!"
-print("OK [5]: A palavra 'técnico'/'tecnico' foi 100% eliminada de todo o documento PDF.")
+# 5. Títulos limpos e neutros (sem termos restritivos técnicos)
+assert "DIAGNÓSTICO TÉCNICO" not in full_text, "FALHA: 'DIAGNÓSTICO TÉCNICO' ainda consta no cabeçalho do PDF!"
+assert "PARECER TÉCNICO" not in full_text, "FALHA: 'PARECER TÉCNICO' ainda consta no PDF!"
+assert "INSPEÇÃO TÉCNICA" not in full_text, "FALHA: 'INSPEÇÃO TÉCNICA' ainda consta no PDF!"
+assert "Observações Técnicas" not in full_text, "FALHA: 'Observações Técnicas' ainda consta no PDF!"
+print("OK [5]: Cabeçalhos e títulos estão 100% neutros e limpos.")
 
-# 6. Remoção de Carregamento Projetado e Recomendação no Parecer (Página 2)
+# 6. Remoção de dicas, sugestões, simulações de balanceamento e recomendações
 assert "Carregamento projetado após balanceamento perfeito" not in full_text, "FALHA: 'Carregamento projetado após balanceamento perfeito' ainda consta no PDF!"
 assert "fusão prematura de elos fusíveis" not in full_text, "FALHA: Recomendação de remanejamento com fusão prematura ainda consta no alerta!"
-print("OK [6]: Textos removidos com sucesso da Seção 5 (Parecer e Resultados Consolidados).")
+assert "Parecer de Remanejamento:" not in full_text, "FALHA: 'Parecer de Remanejamento:' ainda consta no PDF!"
+assert "SE FIZER BALANCEAMENTO DE FASES" not in full_text, "FALHA: Bloco de simulação de balanceamento ainda consta no PDF!"
+print("OK [6]: Dicas, sugestões e parecer de remanejamento removidos com sucesso. Apenas dados e medições reais permanecem.")
 
 # 7. Remoção de fórmulas II, III e IV da Seção 3
 assert "II. Potência Aparente Trifásica" not in full_text, "FALHA: Fórmula II ainda consta no PDF!"
