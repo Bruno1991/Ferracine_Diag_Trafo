@@ -21,7 +21,7 @@ export function renderPage1IdentificationAndSpecs(
 
   let currentY = 28;
 
-  // Block 1: Identificação do Local e Técnico
+  // Block 1: Identificação do Local e Responsáveis
   const idRows: Array<{ left: string; right?: string }> = [];
 
   const filledAuthors = (initialData.authors && initialData.authors.length > 0)
@@ -33,7 +33,8 @@ export function renderPage1IdentificationAndSpecs(
 
   if (filledAuthors.length > 0) {
     filledAuthors.forEach((author) => {
-      const left = `${author.role}: ${author.name}`;
+      const roleDisplay = author.role === 'TÉCNICO' ? 'RESPONSÁVEL' : author.role;
+      const left = `${roleDisplay}: ${author.name}`;
       const right = author.matricula?.trim() ? `Matrícula: ${author.matricula.trim()}` : undefined;
       idRows.push({ left, right });
     });
@@ -123,7 +124,7 @@ export function renderPage1IdentificationAndSpecs(
     right: `Tensão Secundária Fase-Neutro: ${secFnStr}`
   });
 
-  const norm = 'Dados Básicos Coletados em Campo (Técnico)';
+  const norm = 'Dados Básicos Coletados em Campo';
   specRows.push({ left: `Padrão: ${norm}` });
 
   const block2Height = Math.max(18, 10 + specRows.length * 6.2);
@@ -211,7 +212,7 @@ export function renderPage2MeasurementsAndVerdict(
   currentY = renderMeasurementsTable(doc, currentY, activeMeas, analysis, transformer, cycleMode);
   currentY += 6;
 
-  // Block 5: Parecer Técnico e Resultados Consolidados
+  // Block 5: Parecer e Resultados Consolidados
   const iTri = transformer.phaseType === 'TRIFASICO';
   const unbPercent = analysis.currentUnbalancePercent || 0;
   const isUnbalanced = iTri && unbPercent > 15;
@@ -227,7 +228,7 @@ export function renderPage2MeasurementsAndVerdict(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(PDF_COLORS.secondary[0], PDF_COLORS.secondary[1], PDF_COLORS.secondary[2]);
-  doc.text('5. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS', margin, currentY);
+  doc.text('5. PARECER E RESULTADOS CONSOLIDADOS', margin, currentY);
   currentY += 3;
 
   const boxWidth = pageWidth - margin * 2;
@@ -290,8 +291,6 @@ export function renderPage2MeasurementsAndVerdict(
       ? pba.phasesExceedingNominal.map(p => `Fase ${p.phase} (${p.current} A — ${p.loadingPercent}%)`).join(', ')
       : 'Nenhuma.';
     printItem('Fases fora do nominal / sobrecarga (> 100%)', foraText, pba.phasesExceedingNominal.length > 0);
-
-    printItem('Carregamento projetado após balanceamento perfeito', `${pba.postBalancingLoadingPercent}% (${pba.postBalancingCurrentA} A médios por fase).`, !pba.willBeWithinNominalAfterBalancing);
     textY += 1.5;
 
     // Caixa de Veredito de Balanceamento
@@ -329,8 +328,7 @@ export function renderPage2MeasurementsAndVerdict(
 
     const unbItems = [
       { label: 'Desvio de Carga', text: `Desvio de carga de ${unbPercent}% excede o limiar normativo de 15%.` },
-      { label: 'Fases Anômalas', text: `Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).` },
-      { label: 'Recomendação', text: 'Remanejamento imediato de ramais e cargas na rede secundária para evitar aquecimento assimétrico e fusão prematura de elos fusíveis.' }
+      { label: 'Fases Anômalas', text: `Fase ${phs[0].p} com maior carga (${phs[0].curr} A — ${phs[0].ld}%), Fase ${phs[phs.length - 1].p} com menor carga (${phs[phs.length - 1].curr} A — ${phs[phs.length - 1].ld}%).` }
     ];
 
     unbItems.forEach((u) => {
@@ -566,28 +564,7 @@ export function renderPage4NormativeAndFormulas(
     );
   }
 
-  // II. Potência Aparente e Carregamento
-  renderFormulaCard(
-    'II. Potência Aparente Trifásica e Carregamento por Fase e Pico:',
-    'IEEE Std 1459 / NBR 5356-7',
-    formulas.formulaPotenciaCarregamento
-  );
-
-  // III. FDTP PRODIST Módulo 8
-  renderFormulaCard(
-    'III. Fator de Desbalanço de Tensão (FDTP %) — Equações 15 e 16:',
-    'PRODIST Módulo 8 ANEEL (Pág. 14)',
-    formulas.formulaProdistFdtp
-  );
-
-  // IV. Desbalanço de Carga na Rede BT
-  renderFormulaCard(
-    'IV. Desbalanço de Carga na Rede Secundária BT (Triagem do App):',
-    'Energisa NDU 006 / NDU 007 (Limiar: 15%)',
-    formulas.formulaDesequilibrioBt
-  );
-
-  // 4. PARECER TÉCNICO / OBSERVAÇÕES DE CAMPO DO ELETRICISTA
+  // 4. PARECER E OBSERVAÇÕES DE CAMPO
   if (initialData.technicalNotes?.trim()) {
     const textLines = doc.splitTextToSize(initialData.technicalNotes.trim(), pageWidth - 2 * margin - 8);
     const boxHeight = Math.max(18, textLines.length * 3.8 + 8);
@@ -595,13 +572,13 @@ export function renderPage4NormativeAndFormulas(
     if (currentY + boxHeight + 25 > pageHeight) {
       doc.addPage('a4', 'p');
       currentY = 28;
-      drawHeader(doc, 'PARECER TÉCNICO E OBSERVAÇÕES DE CAMPO', doc.getNumberOfPages(), initialData);
+      drawHeader(doc, 'PARECER E OBSERVAÇÕES DE CAMPO', doc.getNumberOfPages(), initialData);
     }
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(PDF_COLORS.secondary[0], PDF_COLORS.secondary[1], PDF_COLORS.secondary[2]);
-    doc.text('4. PARECER TÉCNICO / OBSERVAÇÕES DE CAMPO DO ELETRICISTA', margin, currentY);
+    doc.text('4. PARECER E OBSERVAÇÕES DE CAMPO', margin, currentY);
     currentY += 3.5;
 
     doc.setFillColor(248, 250, 252);

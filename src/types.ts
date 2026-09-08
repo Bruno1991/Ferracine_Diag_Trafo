@@ -101,7 +101,7 @@ export interface UtmCoordinates {
   accuracyMeters?: number;
 }
 
-export type AuthorRole = 'ELETRICISTA' | 'TÉCNICO' | 'ENGENHEIRO' | string;
+export type AuthorRole = 'ELETRICISTA' | 'RESPONSÁVEL' | 'INSPETOR' | 'ENGENHEIRO' | string;
 
 export interface ReportAuthor {
   id: string;

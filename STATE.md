@@ -1,6 +1,6 @@
 # Estado do Projeto: Ferracine Diag Trafo
 
-**Data da Última Atualização:** 05/09/2026  
+**Data da Última Atualização:** 08/09/2026  
 **Responsável Técnico:** Elias Bruno Silva (`Bruno1991`)  
 **Branch Ativa:** `main`  
 **Status Geral:** ✅ Produção / Estável / 100% Funcional no GitHub Pages & Cloudflare Workers  
@@ -138,6 +138,20 @@ O **Ferracine Diag Trafo** é um sistema PWA / Web offline-first voltado para en
 - **Componente Vetorial React (`src/components/FormulaSvg.tsx`) e Proporções Compactas:**
   - Renderiza as fórmulas diretamente como SVG responsivo em `NormsAndCalculationsView.tsx`, com nitidez perfeita em qualquer zoom de tela.
   - Otimização das dimensões e ViewBoxes para formato compacto e equilibrado, eliminando cortes de borda e redimensionamento excessivo tanto na tela (Web UI) quanto no Laudo Pericial em PDF.
+
+### 2.11. Remoção do Termo 'Técnico', Enxugamento do Parecer e Fórmulas no Laudo PDF (08/09/2026)
+- **Neutralidade Operacional (Eletricistas e Técnicos):**
+  - O termo restritivo *"técnico"* foi completamente removido de todas as telas, cabeçalhos, títulos de seções, caixas de diálogo, legendas de fotos, botões, mensagens de validação, documentos PDF e planilhas Excel.
+  - O cabeçalho institucional agora exibe *"DIAGNÓSTICO DE TRANSFORMADORES"*.
+  - A Seção de Parecer agora é intitulada *"PARECER E RESULTADOS CONSOLIDADOS"*.
+  - O anexo fotográfico estampa *"INSPEÇÃO DE CAMPO"*.
+  - O cadastro de autores foi unificado para *"AUTORES DO LAUDO (ELETRICISTAS / RESPONSÁVEIS)"*, com os cargos `ELETRICISTA`, `RESPONSÁVEL`, `INSPETOR` e `ENGENHEIRO`.
+- **Enxugamento do Parecer Técnico (Página 2):**
+  - Removido o item redundante *"Carregamento projetado após balanceamento perfeito: X% (Y A médios por fase)"*.
+  - Removida a linha de *"Recomendação: Remanejamento imediato de ramais e cargas..."* sob o alerta de desequilíbrio.
+- **Compactação de Fórmulas no Laudo PDF (Página 4):**
+  - Deletadas as fórmulas II (Potência Aparente e Carregamento), III (FDTP PRODIST) e IV (Desbalanço BT) da Seção 3 do PDF, preservando com nitidez e destaque a Fórmula I (Corrente Nominal $I_N$).
+  - O laudo consolidado agora enquadra as observações de campo perfeitamente, eliminando quebras de página redundantes.
 
 ---
 

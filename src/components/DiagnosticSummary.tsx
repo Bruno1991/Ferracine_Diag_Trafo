@@ -47,7 +47,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-              4. PARECER TÉCNICO E RESULTADOS CONSOLIDADOS
+              4. PARECER E RESULTADOS CONSOLIDADOS
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
               Cálculos e parametrização extraídos exclusivamente das normas PRODIST Módulo 8, NDUs/ETUs e NBR 5440

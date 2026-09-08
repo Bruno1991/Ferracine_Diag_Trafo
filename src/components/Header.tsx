@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div>
               <h1 className="text-sm sm:text-lg font-extrabold tracking-tight text-slate-900 dark:text-white font-sans">
-                DIAGNÓSTICO TÉCNICO DE TRANSFORMADORES
+                DIAGNÓSTICO DE TRANSFORMADORES
               </h1>
               <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                 COMPLIANCE E ANÁLISE DE DESEMPENHO ELÉTRICO

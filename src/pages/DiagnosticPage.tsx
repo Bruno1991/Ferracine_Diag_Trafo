@@ -123,16 +123,16 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
       {/* 6. Registros Fotográficos do Transformador */}
       <PhotoUploader photos={photos} onPhotosChange={setPhotos} />
 
-      {/* 7. Anotações e Observações Técnicas do Eletricista */}
+      {/* 7. Anotações e Observações de Campo */}
       <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-3 transition-colors duration-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              7. ANOTAÇÕES / OBSERVAÇÕES TÉCNICAS (RELATÓRIO DO ELETRICISTA)
+              7. ANOTAÇÕES E OBSERVAÇÕES DE CAMPO
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Campo livre para o eletricista registrar inspeções visuais de campo, anomalias, estado de conservação, ruídos, vazamento de óleo ou parecer técnico para o laudo.
+              Campo livre para registrar inspeções visuais de campo, anomalias, estado de conservação, ruídos, vazamento de óleo ou parecer para o laudo.
             </p>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-center">
@@ -179,7 +179,7 @@ export const DiagnosticPage: React.FC<DiagnosticPageProps> = (props) => {
             Painel de Exportação e Finalização do Diagnóstico
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Gere o laudo técnico completo em PDF, exporte a planilha Excel com todas as abas normativas ou inicie um novo teste.
+            Gere o laudo completo em PDF, exporte a planilha Excel com todas as abas normativas ou inicie um novo teste.
           </p>
         </div>
 

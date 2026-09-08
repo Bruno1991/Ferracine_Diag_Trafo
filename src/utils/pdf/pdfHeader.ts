@@ -93,7 +93,7 @@ export function drawHeader(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42); // slate-900
-  doc.text('DIAGNÓSTICO TÉCNICO DE TRANSFORMADORES', textX, 8.5);
+  doc.text('DIAGNÓSTICO DE TRANSFORMADORES', textX, 8.5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);

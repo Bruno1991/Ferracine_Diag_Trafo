@@ -28,13 +28,16 @@ export function exportDiagnosticToExcel({
       ];
 
   const sheet1Data: any[][] = [
-    ['LAUDO TÉCNICO DE DIAGNÓSTICO DE TRANSFORMADOR', ''],
+    ['LAUDO DE DIAGNÓSTICO DE TRANSFORMADOR', ''],
     ['Data e Hora do Diagnóstico', initialData.dateTime || new Date().toLocaleString()],
     ...(initialData.equipe?.trim() ? [['Equipe', initialData.equipe.trim()]] : []),
-    ...(authorsList.flatMap((a, idx) => [
-      [`${a.role} #${idx + 1}`, a.name],
-      ...(a.matricula ? [[`Matrícula #${idx + 1}`, a.matricula]] : [])
-    ])),
+    ...(authorsList.flatMap((a, idx) => {
+      const roleDisplay = a.role === 'TÉCNICO' ? 'RESPONSÁVEL' : a.role;
+      return [
+        [`${roleDisplay} #${idx + 1}`, a.name],
+        ...(a.matricula ? [[`Matrícula #${idx + 1}`, a.matricula]] : [])
+      ];
+    })),
     ['Concessionária de Energia', initialData.concessionaria || 'Energisa'],
     ['TAG / Número do Transformador', initialData.transformerTag || 'N/A'],
     ['Localização / Posto', initialData.locationName || 'N/A'],
@@ -44,7 +47,7 @@ export function exportDiagnosticToExcel({
     ['UTM Coordenada Norte (N)', initialData.utm?.northing || 'N/A'],
     ['Latitude', initialData.utm?.latitude || 'N/A'],
     ['Longitude', initialData.utm?.longitude || 'N/A'],
-    ['Anotações / Observações Técnicas', initialData.technicalNotes || 'N/A'],
+    ['Anotações / Observações de Campo', initialData.technicalNotes || 'N/A'],
     [],
     ['DADOS NOMINAIS DO TRANSFORMADOR (BANCO DE DADOS)', ''],
     ['Categoria', transformer.category === 'RECONDICIONADO' ? 'RECONDICIONADO' : 'USADO'],

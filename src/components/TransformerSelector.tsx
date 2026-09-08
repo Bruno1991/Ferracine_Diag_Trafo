@@ -63,7 +63,7 @@ export const TransformerSelector: React.FC<TransformerSelectorProps> = ({
       ...patch,
       id: initialData?.transformerTag?.trim() || selectedTransformer.id || `TRAFO-${patch.powerKva ?? selectedTransformer.powerKva ?? 0}kVA`,
       brand: initialData?.transformerBrand ?? selectedTransformer.brand,
-      standardReference: 'Dados Básicos Coletados em Campo (Técnico / Energisa ETU-109.2)'
+      standardReference: 'Dados Básicos Coletados em Campo (Energisa ETU-109.2)'
     };
     onSelectTransformer(updated);
   };

@@ -77,7 +77,7 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
                 Cadastrar Novo Transformador no Banco de Dados
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                Insira as especificações técnicas da plaqueta do equipamento
+                Insira as especificações da plaqueta do equipamento
               </p>
             </div>
           </div>
@@ -252,7 +252,7 @@ export const AddTransformerModal: React.FC<AddTransformerModalProps> = ({
           </div>
 
           <div>
-            <label className="label-xs mb-1 block">NORMA / REFERÊNCIA TÉCNICA</label>
+            <label className="label-xs mb-1 block">NORMA / REFERÊNCIA</label>
             <input
               type="text"
               value={standardReference}

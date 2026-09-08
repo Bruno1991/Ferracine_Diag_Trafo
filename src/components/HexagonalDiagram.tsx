@@ -63,7 +63,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
     const centerY = (height - 68) / 2 + 16;
     const radius = Math.min(width, height - 80) / 2 - 36;
 
-    // Configuração Visual de Alta Definição: Fundo Sempre Branco para Laudo Técnico
+    // Configuração Visual de Alta Definição: Fundo Sempre Branco para o Laudo
     const bgFill = '#ffffff';
     const titleText = '#0f172a';
     const gridAxes = '#475569';
@@ -217,7 +217,7 @@ export const HexagonalDiagram: React.FC<HexagonalDiagramProps> = ({
       ctx.fillStyle = color;
       ctx.fill();
 
-      // Rótulo com Contorno Branco para Máxima Legibilidade Técnica
+      // Rótulo com Contorno Branco para Máxima Legibilidade
       const lx = centerX + (len + labelOffset) * Math.cos(rad);
       const ly = centerY + (len + labelOffset) * Math.sin(rad) + 4;
       if (isFinite(lx) && isFinite(ly)) {

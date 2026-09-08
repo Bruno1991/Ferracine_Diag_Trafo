@@ -451,13 +451,13 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
         </div>
       </div>
 
-      {/* Seção Dinâmica de Autores do Laudo (Técnicos / Eletricistas) */}
+      {/* Seção Dinâmica de Autores do Laudo */}
       <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700/80">
         <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-700/60 flex-wrap gap-2">
           <div className="flex items-center gap-1.5">
             <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-              AUTORES DO LAUDO (TÉCNICOS E/OU ELETRICISTAS)
+              AUTORES DO LAUDO
             </span>
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
               ({authors.length} autor{authors.length > 1 ? 'es' : ''})
@@ -470,7 +470,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
             className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>ADICIONAR TÉCNICO / ELETRICISTA</span>
+            <span>ADICIONAR AUTOR / RESPONSÁVEL</span>
           </button>
         </div>
 
@@ -486,12 +486,13 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
                   FUNÇÃO / CARGO #{index + 1}
                 </label>
                 <select
-                  value={author.role}
+                  value={author.role === 'TÉCNICO' ? 'RESPONSÁVEL' : author.role}
                   onChange={(e) => handleAuthorFieldChange(index, 'role', e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:border-blue-500 focus:outline-none cursor-pointer"
                 >
                   <option value="ELETRICISTA">ELETRICISTA</option>
-                  <option value="TÉCNICO">TÉCNICO</option>
+                  <option value="RESPONSÁVEL">RESPONSÁVEL</option>
+                  <option value="INSPETOR">INSPETOR</option>
                   <option value="ENGENHEIRO">ENGENHEIRO</option>
                 </select>
               </div>
@@ -505,7 +506,7 @@ export const GpsLocationForm: React.FC<GpsLocationFormProps> = ({ initialData, o
                   type="text"
                   value={author.name}
                   onChange={(e) => handleAuthorFieldChange(index, 'name', e.target.value.toUpperCase())}
-                  placeholder={`NOME DO ${author.role}`}
+                  placeholder={`NOME DO ${author.role === 'TÉCNICO' ? 'RESPONSÁVEL' : author.role}`}
                   className="w-full uppercase bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 font-bold focus:border-blue-500 focus:outline-none"
                   style={{ textTransform: 'uppercase' }}
                 />

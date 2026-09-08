@@ -289,11 +289,11 @@ export default function App() {
   function getReportBlockers(): string[] {
     const blockers: string[] = [];
 
-    // Pelo menos um responsável técnico / eletricista informado
+    // Pelo menos um responsável / eletricista informado
     const hasAuthor = (initialData.authors && initialData.authors.some((a) => a.name.trim())) ||
       Boolean(initialData.electrician1Name?.trim());
     if (!hasAuthor) {
-      blockers.push('informe pelo menos um técnico ou eletricista responsável');
+      blockers.push('informe pelo menos um eletricista ou responsável');
     }
 
     // Transformador com dados básicos

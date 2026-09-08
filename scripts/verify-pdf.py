@@ -43,6 +43,23 @@ assert "MODO DE TESTE:" in page2_text, "FALHA: MODO DE TESTE: não encontrado na
 assert "Ciclo destinado a validar cálculos" in page2_text or "ciclo destinado a validar" in page2_text, "FALHA: texto explicativo de modo de teste não encontrado na linha abaixo."
 print("OK [4]: Na página 2 (Medições de Campo), texto após ':' está na linha abaixo.")
 
+# 5. Remoção do termo 'técnico' / 'tecnico' do PDF
+import re
+assert not re.search(r't[eé]cnic', full_text, re.IGNORECASE), "FALHA: Palavra 'técnico/tecnico' ainda encontrada no PDF!"
+print("OK [5]: A palavra 'técnico'/'tecnico' foi 100% eliminada de todo o documento PDF.")
+
+# 6. Remoção de Carregamento Projetado e Recomendação no Parecer (Página 2)
+assert "Carregamento projetado após balanceamento perfeito" not in full_text, "FALHA: 'Carregamento projetado após balanceamento perfeito' ainda consta no PDF!"
+assert "fusão prematura de elos fusíveis" not in full_text, "FALHA: Recomendação de remanejamento com fusão prematura ainda consta no alerta!"
+print("OK [6]: Textos removidos com sucesso da Seção 5 (Parecer e Resultados Consolidados).")
+
+# 7. Remoção de fórmulas II, III e IV da Seção 3
+assert "II. Potência Aparente Trifásica" not in full_text, "FALHA: Fórmula II ainda consta no PDF!"
+assert "III. Fator de Desbalanço de Tensão" not in full_text, "FALHA: Fórmula III ainda consta no PDF!"
+assert "IV. Desbalanço de Carga na Rede Secundária" not in full_text, "FALHA: Fórmula IV ainda consta no PDF!"
+assert "I. Cálculo da corrente nominal" in full_text, "FALHA: Fórmula I deveria permanecer no PDF!"
+print("OK [7]: Fórmulas II, III e IV foram removidas da Seção 3, mantendo apenas a Fórmula I.")
+
 # 5. Fórmulas presentes como imagens
 # Cada página é renderizada em PNG para conferência visual
 artifact_dir = r"C:\Users\conta\.gemini\antigravity-ide\brain\270f5d58-2b0c-406d-8f80-fd06e5384791"

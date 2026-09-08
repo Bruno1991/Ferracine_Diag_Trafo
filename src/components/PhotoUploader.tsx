@@ -147,7 +147,7 @@ export const PhotoUploader: React.FC<PhotoUploaderProps> = ({ photos, onPhotosCh
       {photos.length === 0 && (
         <div className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 p-2.5 rounded border border-amber-200 dark:border-amber-800/80">
           <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span>Nenhuma foto anexada. Fotos da placa e do equipamento agregam valor técnico e comprovação pericial ao laudo PDF.</span>
+          <span>Nenhuma foto anexada. Fotos da placa e do equipamento agregam comprovação pericial e rastreabilidade ao laudo PDF.</span>
         </div>
       )}
     </div>

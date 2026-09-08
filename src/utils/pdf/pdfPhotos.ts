@@ -26,7 +26,7 @@ export function renderPhotoAnnexPages(
     doc.setFontSize(10);
     doc.setTextColor(PDF_COLORS.secondary[0], PDF_COLORS.secondary[1], PDF_COLORS.secondary[2]);
     doc.text(
-      `REGISTRO FOTOGRÁFICO ${idx + 1}/${validPhotos.length} — INSPEÇÃO TÉCNICA (TAG: ${initialData.transformerTag || 'S/TAG'})`,
+      `REGISTRO FOTOGRÁFICO ${idx + 1}/${validPhotos.length} — INSPEÇÃO DE CAMPO (TAG: ${initialData.transformerTag || 'S/TAG'})`,
       margin,
       titleY
     );
@@ -70,7 +70,7 @@ export function renderPhotoAnnexPages(
       // Renderiza a imagem sem distorção
       doc.addImage(photo, 'JPEG', renderX, renderY, renderW, renderH);
 
-      // Legenda técnica abaixo da foto
+      // Legenda de identificação abaixo da foto
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(30, 41, 59);
